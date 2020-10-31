@@ -149,7 +149,7 @@ def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, shared
     
     result = OrderedDict()
     epoch_start = 1
-    save_path = args.path
+
     # train loop
     best_top1 = 0
     for epoch in range(epoch_start, max_epoch + 1):
@@ -171,29 +171,6 @@ def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, shared
                 for key, setname in itertools.product(['loss', 'top1', 'top5'], ['train', 'valid', 'test']):
                     result['%s_%s' % (key, setname)] = rs[setname][key]
                 result['epoch'] = epoch
-                # save checkpoint
-                if save_path and shared:
-                    logger.info('save model@%d to %s' % (epoch, save_path))
-                    torch.save({
-                        'epoch': epoch,
-                        'log': {
-                            'train': rs['train'].get_dict(),
-                            'valid': rs['valid'].get_dict(),
-                            'test': rs['test'].get_dict(),
-                        },
-                        'optimizer': optimizer.state_dict(),
-                        'model': model.state_dict()
-                    }, save_path)
-                    torch.save({
-                        'epoch': epoch,
-                        'log': {
-                            'train': rs['train'].get_dict(),
-                            'valid': rs['valid'].get_dict(),
-                            'test': rs['test'].get_dict(),
-                        },
-                        'optimizer': optimizer.state_dict(),
-                        'model': model.state_dict()
-                    }, save_path.replace('.pth', '_e%d_top1_%.3f_%.3f' % (epoch, rs['train']['top1'], rs['test']['top1']) + '.pth'))
        
     result['top1_test'] = best_top1
     if shared:
@@ -204,7 +181,7 @@ def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, shared
 
 if __name__ == '__main__':
     args = parser.parse_args()
-    args.path = args.path+'/'+args.dataset+'/'+args.model
+    args.path = args.path+'/'+args.dataset+'/'+args.model    
     args.policy_path = args.path+'/policy.txt'
     args.conf = {
         'type': args.model,

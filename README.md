@@ -33,7 +33,7 @@ Unofficial [AWS AutoAugment](https://arxiv.org/abs/2009.14737 ) implementation i
 - [ ] Gradient-basedNAS + AWS
 
 ## Results
-
+<!---
 ### CIFAR-10 / 100
 
 Search : **3.5 GPU Hours (1428x faster than AutoAugment)**, WResNet-40x2 on Reduced CIFAR-10
@@ -55,7 +55,7 @@ Search : **3.5 GPU Hours (1428x faster than AutoAugment)**, WResNet-40x2 on Redu
 | PyramidNet+ShakeDrop  | 14.0       | 12.2       | 10.7        | 11.9 / 11.7      | [Download](https://arena.kakaocdn.net/brainrepo/fast-autoaugment/cifar100_pyramid272_top1_11.74.pth) |
 
 
-
+-->
 ## Run
 
 We conducted experiments under
@@ -65,15 +65,18 @@ We conducted experiments under
 
 ### Search a augmentation policy
 
-Please read ray's document to construct a proper ray cluster : https://github.com/ray-project/ray, and run search.py with the master's redis address.
+<!---Please read ray's document to construct a proper ray cluster : https://github.com/ray-project/ray, and run search.py with the master's redis address.
 
 ```
 $ python search.py -c confs/wresnet40x2_cifar10_b512.yaml --dataroot ... --redis ...
-```
+```-->
 
+```
+$ python search.py 
+```
 ### Train a model with found policies
 
-You can train network architectures on CIFAR-10 / 100 and ImageNet with our searched policies.
+<!---You can train network architectures on CIFAR-10 / 100 and ImageNet with our searched policies.
 
 - fa_reduced_cifar10 : reduced CIFAR-10(4k images), WResNet-40x2
 - fa_reduced_imagenet : reduced ImageNet(50k images, 120 classes), ResNet-50
@@ -96,7 +99,7 @@ If you want to train with multi-gpu/node, use `torch.distributed.launch` such as
 ```bash
 $ python -m torch.distributed.launch --nproc_per_node={num_gpu_per_node} --nnodes={num_node} --master_addr={master} --master_port={master_port} --node_rank={0,1,2,...,num_node} FastAutoAugment/train.py -c confs/efficientnet_b4.yaml --aug fa_reduced_imagenet
 ```
-
+-->
 ## References & Opensources
 
 We increase the batch size and adapt the learning rate accordingly to boost the training. Otherwise, we set other hyperparameters equal to AutoAugment if possible. For the unknown hyperparameters, we follow values from the original references or we tune them to match baseline performances.
@@ -110,3 +113,4 @@ We increase the batch size and adapt the learning rate accordingly to boost the 
 - **Ray** : [code](https://github.com/ray-project/ray)
 - **HyperOpt** : [code](https://github.com/hyperopt/hyperopt)
 - **Fast AutoAugment** : [code](https://github.com/kakaobrain/fast-autoaugment)
+- **NASNet** : [code](https://github.com/MarSaKi/nasnet)
