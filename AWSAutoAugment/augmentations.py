@@ -185,10 +185,49 @@ def augment_list():  # 36 operations
         (AutoContrast, 0, 1),  # 33
         (Equalize, 0, 1),  # 34          
         (Invert, 0, 1),  # 35
-  
-    ]
+        ]
     return l
 
+def augment_list_by_name():  # 36 operations
+    l = [
+        ('ShearX',0.1),  # 0
+        ('ShearX', 0.2),  # 1     
+        ('ShearX', 0.3),  # 2    
+        ('ShearY', 0.1),  # 3
+        ('ShearY', 0.2),  # 4        
+        ('ShearY', 0.3),  # 5
+        ('TranslateX', 0.15),  # 6
+        ('TranslateX', 0.3),    # 7
+        ('TranslateX', 0.45),  # 8
+        ('TranslateY', 0.15),  # 9
+        ('TranslateY', 0.3),    # 10      
+        ('TranslateY', 0.45),  # 11
+        ('Rotate', 10),  # 12
+        ('Rotate', 20),  # 13
+        ('Rotate', 30),  # 14 
+        ('Color', 0.3),  # 15 
+        ('Color', 0.6),  # 16         
+        ('Color', 0.9),  # 17       
+        ('Solarize', 26),  # 18
+        ('Solarize', 102),  # 19
+        ('Solarize', 179),  # 20       
+        ('Posterize', 4.4),  # 21
+        ('Posterize', 5.6),  # 22    
+        ('Posterize', 6.8),  # 23        
+        ('Contrast', 1.3),  # 24   
+        ('Contrast', 1.6),  # 25     
+        ('Contrast', 1.9),  # 26
+        ('Sharpness', 1.3),  # 27
+        ('Sharpness', 1.6),  # 28
+        ('Sharpness', 1.9),  # 29        
+        ('Brightness', 1.9),  # 30       
+        ('Brightness', 1.9),  # 31     
+        ('Brightness', 1.9),  # 32             
+        ('AutoContrast', 1),  # 33
+        ('Equalize', 1),  # 34          
+        ('Invert', 1),  # 35
+        ]
+    return l
 
 augment_dict = {fn.__name__: (fn, v1, v2) for fn, v1, v2 in augment_list()}
 
@@ -260,5 +299,22 @@ class Augmentation(object):
                 img = apply_augment(img, name, level)
         return img
 
+class UniformAugmentation(object):
+    def __init__(self):
+        self.aug_list = augment_list()
 
+    def __call__(self, img):
+        augment_fn, low, high = random.choice(self.aug_list)
+        img = augment_fn(img.copy(), high)
+        return img
     
+class AWSAugmentation(object):
+    def __init__(self, policies):
+        self.policies = policies
+
+    def __call__(self, img):
+        for _ in range(1):
+            policy = random.choice(self.policies)
+            for augment_fn, low, high in policy:
+                img = augment_fn(img.copy(), high)
+        return img

@@ -19,16 +19,16 @@ import torch.distributed as dist
 from tqdm import tqdm
 from theconf import Config as C, ConfigArgumentParser
 
-from AWSAutoAugment.common import get_logger, EMA, add_filehandler
-from AWSAutoAugment.data import get_dataloaders
-from AWSAutoAugment.lr_scheduler import adjust_learning_rate_resnet
-from AWSAutoAugment.metrics import accuracy, Accumulator, CrossEntropyLabelSmooth
-from AWSAutoAugment.networks import get_model, num_class
-from AWSAutoAugment.tf_port.rmsprop import RMSpropTF
-from AWSAutoAugment.aug_mixup import CrossEntropyMixUpLabelSmooth, mixup
+from common import get_logger, EMA, add_filehandler
+from data import get_dataloaders
+from lr_scheduler import adjust_learning_rate_resnet
+from metrics import accuracy, Accumulator, CrossEntropyLabelSmooth
+from networks import get_model, num_class
+#from tf_port.rmsprop import RMSpropTF
+from aug_mixup import CrossEntropyMixUpLabelSmooth, mixup
 from warmup_scheduler import GradualWarmupScheduler
 
-logger = get_logger('AWS AutoAugment')
+logger = get_logger('Fast AutoAugment')
 logger.setLevel(logging.INFO)
 
 
@@ -143,14 +143,6 @@ def train_and_eval(tag, dataroot, test_ratio=0.0, cv_fold=0, reporter=None, metr
             momentum=C.get()['optimizer'].get('momentum', 0.9),
             weight_decay=0.0,
             nesterov=C.get()['optimizer'].get('nesterov', True)
-        )
-    elif C.get()['optimizer']['type'] == 'rmsprop':
-        optimizer = RMSpropTF(
-            model.parameters(),
-            lr=C.get()['lr'],
-            weight_decay=0.0,
-            alpha=0.9, momentum=0.9,
-            eps=0.001
         )
     else:
         raise ValueError('invalid optimizer type=%s' % C.get()['optimizer']['type'])

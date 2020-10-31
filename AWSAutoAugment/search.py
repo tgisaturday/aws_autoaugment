@@ -3,22 +3,24 @@ import os
 import sys
 import time
 from collections import OrderedDict, defaultdict
-
+import logging
 import torch
-
+import argparse
 import numpy as np
-
+import math
+import torch.nn as nn
+import itertools
+import torch.backends.cudnn as cudnn
 from tqdm import tqdm
 
 #from FastAutoAugment.archive import remove_deplicates, policy_decoder
-from AWSAutoAugment.augmentations import augment_list
-from AWSAutoAugment.common import get_logger, add_filehandler
-from AWSAutoAugment.data import get_dataloaders
-from AWSAutoAugment.metrics import Accumulator
-from AWSAutoAugment.networks import get_model, num_class
-from AWSAutoAugment.train import train_and_eval
-from AWSAutoAugment.PPO import Controller
-from theconf import Config as C, ConfigArgumentParser
+from augmentations import augment_list
+from common import get_logger, add_filehandler
+from data import get_dataloaders
+from metrics import *
+from networks import get_model, num_class
+from PPO import Controller
+
 
 
 #from hyperopt import hp
@@ -36,13 +38,14 @@ parser.add_argument('--path', type=str, default='./results')
 parser.add_argument('--dataroot', type=str, default='./data')
 parser.add_argument('--gpu', help='gpu available', default='0,1,2,3')
 parser.add_argument('--resume', action='store_true')
+parser.add_argument('--checkpoint',type=str)
 parser.add_argument('--manual_seed', default=0, type=int)
 
 """ run config """
 parser.add_argument('--n_epochs', type=int, default=10)
 parser.add_argument('--init_lr', type=float, default=0.025)
 parser.add_argument('--lr_schedule', type=str, default='cosine')
-parser.add_argument('--cutout', type=int, default=0)
+parser.add_argument('--cutout', type=int, default=16)
 parser.add_argument('--label_smoothing', type=float, default=0.0)
 # lr_schedule_param
 
@@ -68,6 +71,7 @@ parser.add_argument('--reward_ema_decay', type=float, default=0.9)
 """ policy hyper-parameters """
 parser.add_argument('--policy_init_type', type=str, default='uniform', choices=['normal', 'uniform'])
 parser.add_argument('--policy_opt_type', type=str, default='adam', choices=['adam'])
+parser.add_argument('--policy_batch_size', type=int, default=5)
 parser.add_argument('--policy_lr', type=float, default=0.1)
 parser.add_argument('--policy_adam_beta1', type=float, default=0.5)  # arch_opt_param
 parser.add_argument('--policy_adam_beta2', type=float, default=0.999)  # arch_opt_param
@@ -76,15 +80,14 @@ parser.add_argument('--policy_weight_decay', type=float, default=0)
 parser.add_argument('--policy_clip_epsilon', type=float, default=0.2)
 parser.add_argument('--policy_entropy_weight', type=float, default=1e-5)
 
-
+""" controller hyper-parameters """
+parser.add_argument('--policy_embedding_size', type=int, default=32)
+parser.add_argument('--policy_hidden_size', type=int, default=100)
+parser.add_argument('--policy_subpolices', type=int, default=5) # number of subpolicies
 logger = get_logger('AWSAugment')
 logger.setLevel(logging.INFO)
 
-def run_epoch(model, loader, loss_fn, optimizer, desc_default='', epoch=0, writer=None, verbose=1, scheduler=None):
-    tqdm_disable = bool(os.environ.get('TASK_NAME', ''))    # KakaoBrain Environment
-    if verbose:
-        loader = tqdm(loader, disable=tqdm_disable)
-        loader.set_description('[%s %04d/%04d]' % (desc_default, epoch, C.get()['epoch']))
+def run_epoch( model, loader, loss_fn, optimizer, max_epoch, desc_default='', epoch=0,  scheduler=None):
 
     metrics = Accumulator()
     cnt = 0
@@ -102,8 +105,6 @@ def run_epoch(model, loader, loss_fn, optimizer, desc_default='', epoch=0, write
 
         if optimizer:
             loss.backward()
-            if C.get()['optimizer'].get('clip', 5) > 0:
-                nn.utils.clip_grad_norm_(model.parameters(), C.get()['optimizer'].get('clip', 5))
             optimizer.step()
 
         top1, top5 = accuracy(preds, label, (1, 5))
@@ -113,32 +114,24 @@ def run_epoch(model, loader, loss_fn, optimizer, desc_default='', epoch=0, write
             'top5': top5.item() * len(data),
         })
         cnt += len(data)
-        if verbose:
-            postfix = metrics / cnt
-            if optimizer:
-                postfix['lr'] = optimizer.param_groups[0]['lr']
-            loader.set_postfix(postfix)
 
         if scheduler is not None:
             scheduler.step(epoch - 1 + float(steps) / total_steps)
 
         del preds, loss, top1, top5, data, label
 
-    if tqdm_disable:
-        if optimizer:
-            logger.info('[%s %03d/%03d] %s lr=%.6f', desc_default, epoch, C.get()['epoch'], metrics / cnt, optimizer.param_groups[0]['lr'])
-        else:
-            logger.info('[%s %03d/%03d] %s', desc_default, epoch, C.get()['epoch'], metrics / cnt)
+
+    if optimizer:
+        logger.info('[%s %03d/%03d] %s lr=%.6f', desc_default, epoch, max_epoch, metrics / cnt, optimizer.param_groups[0]['lr'])
+    else:
+        logger.info('[%s %03d/%03d] %s', desc_default, epoch, max_epoch, metrics / cnt)
 
     metrics /= cnt
     if optimizer:
         metrics.metrics['lr'] = optimizer.param_groups[0]['lr']
-    if verbose:
-        for key, value in metrics.items():
-            writer.add_scalar(key, value, epoch)
     return metrics
 
-def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, shared=False):
+def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, shared=False, metric='last'):
 
     max_epoch = epoch
     trainsampler, trainloader, validloader, testloader_ = get_dataloaders(args, policy, test_ratio, split_idx=cv_fold)
@@ -146,54 +139,31 @@ def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, shared
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(
             model.parameters(),
-            lr=arg.init_lr,
-            momentum=args.momentum
-            weight_decay=arg.weight_decay
+            lr=args.init_lr,
+            momentum=args.momentum,
+            weight_decay=args.weight_decay,
             nesterov=not args.no_nesterov,
         )
 
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epoch, eta_min=0.)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epoch, eta_min=0.)
     
     result = OrderedDict()
     epoch_start = 1
-    if save_path and os.path.exists(save_path):
-        logger.info('%s file found. loading...' % save_path)
-        data = torch.load(save_path)
-        if 'model' in data or 'state_dict' in data:
-            key = 'model' if 'model' in data else 'state_dict'
-            logger.info('checkpoint epoch@%d' % data['epoch'])
-            if not isinstance(model, DataParallel):
-                model.load_state_dict({k.replace('module.', ''): v for k, v in data[key].items()})
-            else:
-                model.load_state_dict({k if 'module.' in k else 'module.'+k: v for k, v in data[key].items()})
-            optimizer.load_state_dict(data['optimizer'])
-            if data['epoch'] < epoch:
-                epoch_start = data['epoch']
-            else:
-                only_eval = True
-        else:
-            model.load_state_dict({k: v for k, v in data.items()})
-        del data
-    else:
-        logger.info('"%s" file not found. skip to pretrain weights...' % save_path)
-        if only_eval:
-            logger.warning('model checkpoint not found. only-evaluation mode is off.')
-        only_eval = False
-
+    save_path = args.path
     # train loop
     best_top1 = 0
     for epoch in range(epoch_start, max_epoch + 1):
         model.train()
         rs = dict()
-        rs['train'] = run_epoch(model, trainloader, criterion, optimizer, desc_default='train', epoch=epoch, writer=writers[0], verbose=True, scheduler=scheduler)
+        rs['train'] = run_epoch(model, trainloader, criterion, optimizer,max_epoch, desc_default='train', epoch=epoch, scheduler=scheduler)
         model.eval()
 
         if math.isnan(rs['train']['loss']):
             raise Exception('train loss is NaN.')
 
         if epoch % 5 == 0 or epoch == max_epoch:
-            rs['valid'] = run_epoch(model, validloader, criterion, None, desc_default='valid', epoch=epoch, writer=writers[1], verbose=True)
-            rs['test'] = run_epoch(model, testloader_, criterion, None, desc_default='*test', epoch=epoch, writer=writers[2], verbose=True)
+            rs['valid'] = run_epoch(model, validloader, criterion, None,max_epoch, desc_default='valid', epoch=epoch)
+            rs['test'] = run_epoch(model, testloader_, criterion, None,max_epoch, desc_default='*test', epoch=epoch)
 
             if metric == 'last' or rs[metric]['top1'] > best_top1:
                 if metric != 'last':
@@ -201,17 +171,8 @@ def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, shared
                 for key, setname in itertools.product(['loss', 'top1', 'top5'], ['train', 'valid', 'test']):
                     result['%s_%s' % (key, setname)] = rs[setname][key]
                 result['epoch'] = epoch
-
-                writers[1].add_scalar('valid_top1/best', rs['valid']['top1'], epoch)
-                writers[2].add_scalar('test_top1/best', rs['test']['top1'], epoch)
-
-                reporter(
-                    loss_valid=rs['valid']['loss'], top1_valid=rs['valid']['top1'],
-                    loss_test=rs['test']['loss'], top1_test=rs['test']['top1']
-                )
-
                 # save checkpoint
-                if save_path:
+                if save_path and shared:
                     logger.info('save model@%d to %s' % (epoch, save_path))
                     torch.save({
                         'epoch': epoch,
@@ -233,7 +194,7 @@ def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, shared
                         'optimizer': optimizer.state_dict(),
                         'model': model.state_dict()
                     }, save_path.replace('.pth', '_e%d_top1_%.3f_%.3f' % (epoch, rs['train']['top1'], rs['test']['top1']) + '.pth'))
-
+       
     result['top1_test'] = best_top1
     if shared:
         return model, result
@@ -244,38 +205,57 @@ def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, shared
 if __name__ == '__main__':
     args = parser.parse_args()
     args.path = args.path+'/'+args.dataset+'/'+args.model
-    
+    args.policy_path = args.path+'/policy.txt'
     args.conf = {
         'type': args.model,
         'dataset': args.dataset,
     }    
          
     torch.manual_seed(args.manual_seed)
-    torch.cuda.manual_seed_all(args.manual_seed)
     np.random.seed(args.manual_seed)
     
+    if torch.cuda.is_available():
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  
+        cudnn.benchmark = True
+        cudnn.enable = True
+        logging.info('using gpu : {}'.format(args.gpu))
+        torch.cuda.manual_seed(args.manual_seed)
+    else:
+        device = torch.device('cpu')
+        logging.info('using cpu')    
+        
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
     os.makedirs(args.path, exist_ok=True)
-    curr_weights = get_model(conf, num_class(args.dataset))   
+    shared_weights = get_model(args.conf, num_class(args.dataset))   
     
-    current_policy = policy_decode(policy)
     # stage 1 training to get aws
-    shared_weights, reward = train_and_eval(args, curr_weights, args.warmup_epoch, current_policy, test_ratio=0.0, cv_fold=0, shared=True)
-    logger.info('[Stage 1 top1-test: %3d', reward)
+    shared_weights, result = train_and_eval(args, shared_weights, args.warmup_epochs, policy='uniform', test_ratio=0.2, cv_fold=0, shared=True)
+    logger.info('[Stage 1 top1-valid: %3d', result['top1_valid'])
+    logger.info('[Stage 1 top1-test: %3d', result['top1_test'])
 
     #stage 2 policy update with PPO
     betas = (args.policy_adam_beta1, args.policy_adam_beta2)
-    controller = Controller(args, args.policy_lr, betas, args.policy_clip_epsilon, args.policy_entropy_weight)
     
+    controller = Controller(args.policy_lr, betas, args.policy_clip_epsilon, 
+                            args.policy_entropy_weight,args.policy_embedding_size, 
+                            args.policy_hidden_size, args.policy_subpolices,device)
+    
+    controller.to(device)
     for t in range(args.policy_steps):
         curr_weights = shared_weights
+        policy_fp = open(args.policy_path, 'a')
         logger.info('Controller: Epoch %d / %d' % (t+1, args.policy_steps))
-        softmaxes, log_softmaxes, subpolicies = controller.predict(SUBPOLICIES)
-        for i, subpolicy in enumerate(subpolicies):
-            logger.info('# Sub-policy %d' % (i+1))
-            logger.info(subpolicy)
-
-        new_reward = train_and_eval(args, curr_weights, args.finetune_epoch, subpolicies , test_ratio=0.0, cv_fold=0)
+        print('-----Controller: Epoch %d / %d-----' % (t+1, args.policy_steps), file=policy_fp)
+        actions_p, actions_log_p, actions_index = controller.sample()
+        subpolicies, subpolicies_str  = controller.convert(actions_index)
+        for i, subpolicy in enumerate(subpolicies_str):
+            logger.info('# Sub-policy {}: {}'.format(i+1, subpolicy))
+            print('# Sub-policy {}: {}'.format(i+1, subpolicy), file=policy_fp)            
+        policy_fp.close()
+        result = train_and_eval(args, curr_weights, args.finetune_epochs, subpolicies , test_ratio=0.2, cv_fold=0)
+        reward = result['top1_valid']
+        logger.info('[Stage 1 top1-valid: %3d', result['top1_valid'])
+        logger.info('[Stage 1 top1-test: %3d', result['top1_test'])            
         if t == 0:
             reward = new_reward
         else:

@@ -9,13 +9,12 @@ from torch.utils.data import SubsetRandomSampler, Sampler
 from torch.utils.data.dataset import ConcatDataset
 from torchvision.transforms import transforms
 from sklearn.model_selection import StratifiedShuffleSplit
-from theconf import Config as C
 
-from AWSAugment.augmentations import *
-from AWSAugment.common import get_logger
-from AWSAugment.imagenet import ImageNet
+from augmentations import *
+from common import get_logger
+from imagenet import ImageNet
 
-from AWSAugment.augmentations import Lighting
+from augmentations import Lighting
 
 logger = get_logger('AWSAugment')
 logger.setLevel(logging.INFO)
@@ -30,7 +29,7 @@ _IMAGENET_PCA = {
 _CIFAR_MEAN, _CIFAR_STD = (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
 
 
-def get_dataloaders(args, policy, split=0.15, split_idx=0):
+def get_dataloaders(args, policy='uniform', split=0.15, split_idx=0):
     dataset = args.dataset
     batch = args.batch_size
     dataroot = args.dataroot
@@ -70,8 +69,13 @@ def get_dataloaders(args, policy, split=0.15, split_idx=0):
 
     
     #apply current policy
-    transform_train.transforms.insert(0, Augmentation(policy))
+    if policy=='uniform':
+        transform_train.transforms.insert(0, UniformAugmentation()) 
+    else:
+        transform_train.transforms.insert(0, AWSAugmentation(policy))
 
+ 
+        
     if args.cutout > 0:
         transform_train.transforms.append(CutoutDefault(args.cutout))
 

@@ -1,11 +1,14 @@
-#imported from https://github.com/nikhilbarhate99/PPO-PyTorch/blob/master/PPO.py
+#imported from https://github.com/MarSaKi/nasnet/blob/master/PPO.py
 
 import torch
 import torch.nn as nn
 from torch.distributions import Categorical
+
+import torch.nn.functional as F
+
 from torch.autograd import Variable
 
-from AWSAutoAugment.augmentations import augment_list as transformations
+from augmentations import augment_list, augment_list_by_name
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -40,74 +43,112 @@ class Subpolicy:
                 ret += '\n'
         return ret    
     
-# Experiment parameters
 
-LSTM_UNITS = 100
-
-SUBPOLICIES = 5
-SUBPOLICY_OPS = 2
-
-OP_TYPES = 36
-OP_PROBS = 11
       
-class Controller:
-    def __init__(self, lr, betas, clip_epsilon, entropy_weight):
+class Controller(nn.Module):
+    def __init__(self, lr, betas, clip_epsilon, entropy_weight,embedding_size, hidden_size, subpolicies ,device):
+        super(Controller, self).__init__()        
         self.lr = lr
         self.betas = betas
         self.clip_epsilon = clip_epsilon
         self.entropy_weight = entropy_weight     
-        self.lstm = nn.LSTM(SUBPOLICIES, LSTM_UNITS)
-        self.opt1_type = nn.Linear(LSTM_UNITS, OP_TYPES),
-        self.opt1_prob = nn.Linear(LSTM_UNITS, OP_PROBS),    
-        self.opt2_type = nn.Linear(LSTM_UNITS, OP_TYPES),         
-        self.opt2_prob = nn.Linear(LSTM_UNITS, OP_PROBS), 
-           
+        self.embedding_size = embedding_size
+        self.hidden_size = hidden_size
+        self.subpolicies = subpolicies
+        self.len_OPS = 36 * 36 #number of operation candidates
+        
+        self.device = device       
+        
+        self.embedding = nn.Embedding(self.len_OPS*self.subpolicies, self.embedding_size)    
+        
+        #operation 
+        self.op_decoder = nn.Linear(hidden_size, self.len_OPS)
+        
+        self.rnn = nn.LSTMCell(self.embedding_size, hidden_size)
+
         self.init_parameters()
         
-    def forward(self):
-        x = np.zeros((1, SUBPOLICIES, 1))        
-        x = self.lstm(x)
-        opt1_type = self.opt1_type(x)
-        opt1_prob = self.opt1_prob(x)      
-        opt2_type = self.opt2_type(x)
-        opt2_prob = self.opt2_prob(x)
-        opt1_type_softmax = F.softmax(opt1_type, dim=-1)
-        opt1_type_log = F.log_softmax(opt1_type, dim=-1)  
-        opt2_type_softmax = F.softmax(opt2_type, dim=-1)
-        opt2_type_log = F.log_softmax(opt2_type, dim=-1)
-        
-        opt1_prob_softmax = F.softmax(opt1_prob, dim=-1)
-        opt1_prob_log = F.log_softmax(opt1_prob, dim=-1)  
-        opt2_prob_softmax = F.softmax(opt2_prob, dim=-1)
-        opt2_prob_log = F.log_softmax(opt2_prob, dim=-1)  
-        
-        return ((opt1_type_softmax,opt1_prob_softmax) , (opt2_type_softmax, opt2_prob_softmax)), ((opt1_type_log ,opt1_prob_log ) , (opt2_type_log , opt2_prob_log))
+    def forward(self, input, h_t, c_t):
+        input = self.embedding(input)
+        h_t, c_t = self.rnn(input, (h_t, c_t))
+        logits = self.op_decoder(h_t)
+        return h_t, c_t, logits
+    
+    def sample(self):
+        input = torch.LongTensor([self.len_OPS]).to(self.device)
+        h_t, c_t = self.init_hidden()
+        actions_p = []
+        actions_log_p = []
+        actions_index = []
+
+        for subpolicy in range(self.subpolicies):
+            h_t, c_t, logits = self.forward(input, h_t, c_t)
+            action_index = Categorical(logits=logits).sample()
+            p = F.softmax(logits, dim=-1)[0,action_index]
+            log_p = F.log_softmax(logits, dim=-1)[0,action_index]
+            actions_p.append(p.detach())
+            actions_log_p.append(log_p.detach())
+            actions_index.append(action_index)
             
-    def predict(self):
-        softmaxes,log_softmaxes = self.forward()
-        # convert softmaxes into subpolicies
-        subpolicies = []
-        for i in range(SUBPOLICIES):
-            operations = []
-            for j in range(SUBPOLICY_OPS):
-                op = softmaxes[j]
-                operations.append(Operation(op[0],op[1]))
-            subpolicies.append(Subpolicy(*operations))
-        return softmaxes, log_softmaxes, subpolicies
+            input = action_index + self.len_OPS
+
+        actions_p = torch.cat(actions_p)
+        actions_log_p = torch.cat(actions_log_p)
+        actions_index = torch.cat(actions_index)
+
+        return actions_p, actions_log_p, actions_index
+
+
+    def get_p(self, actions_index):
+        input = torch.LongTensor([self.len_OPS]).to(self.device)
+        h_t, c_t = self.init_hidden()
+        t = 0
+        actions_p = []
+        actions_log_p = []
+
+        for subpolicy in range(self.subpolicies):
+            h_t, c_t, logits = self.forward(input, h_t, c_t)
+            action_index = actions_index[t].unsqueeze(0)
+            t += 1
+            p = F.softmax(logits, dim=-1)[0, action_index]
+            log_p = F.log_softmax(logits, dim=-1)[0, action_index]
+            actions_p.append(p)
+            actions_log_p.append(log_p)
+            
+            input = action_index + self.len_nodes + self.len_OPS
+
+        actions_p = torch.cat(actions_p)
+        actions_log_p = torch.cat(actions_log_p)
+
+        return actions_p, actions_log_p
+            
+    def convert(self, actions_index):
+        operations = []
+        operations_str = []
+        for actions in actions_index:
+            op1_idx = actions // 36
+            op2_idx = actions % 36 -1
+            transformations = augment_list()
+            transformations_str = augment_list_by_name()
+            operations.append([transformations[op1_idx],transformations[op2_idx]])
+            operations_str.append([transformations_str[op1_idx],transformations_str[op2_idx]])            
+        return operations, operations_str
+    
+    def init_hidden(self):
+        h_t = torch.zeros(1, self.hidden_size, dtype=torch.float, device=self.device)
+        c_t = torch.zeros(1, self.hidden_size, dtype=torch.float, device=self.device)
+
+        return (h_t, c_t)    
     
     def init_parameters(self):
         init_range = 0.1
         for param in self.parameters():
-            param.data.uniform_(-init_range, init_range)
-        self.opt1_type.bias.data.fill_(0)  
-        self.opt2_type.bias.data.fill_(0)          
-        self.opt1_prob.bias.data.fill_(0)          
-        self.opt2_prob.bias.data.fill_(0)  
+            param.data.uniform_(-init_range, init_range)         
+        self.op_decoder.bias.data.fill_(0)
 
 
         
-    def update(self, reward):
-        actions_p, actions_log_p = self.forward()   
+    def update(self, actions_p, actions_log_p): 
         loss = self.cal_loss(actions_p, actions_log_p, reward)
         self.optimizer.zero_grad()
         loss.backward()

@@ -9,7 +9,7 @@ import threading
 import six
 from six.moves import queue
 
-from AWSAutoAugment import safe_shell_exec
+import safe_shell_exec
 
 
 def _exec_command(command):

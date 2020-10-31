@@ -12,16 +12,17 @@ Unofficial [AWS AutoAugment](https://arxiv.org/abs/2009.14737 ) implementation i
 ### Essentials
 - [x] baseline structure
 - [x] augmentation list
-- [ ] shared policy
-- [ ] augmentaition-wise shared model weights
-- [ ] PPO+baseline trick
-- [ ] CIFAR100 WRN 
+- [x] shared policy
+- [x] augmentation-wise shared model weights
+- [x] PPO+baseline trick
+- [x] CIFAR100 WRN 
 - [ ] CIFAR100 Shake-Shake
 - [ ] CIFAR100 PyramidNet+ShakeDrop
 
 ### Possible Modification
-- [ ] other policy optimization methods
-- [ ] weight exponential moving average for shared model weights
+- [ ] Random Search
+- [ ] Policy Gradient
+- [ ] Weight exponential moving average for shared model weights
 - [ ] Stocastic Depth 
 - [ ] CIFAR10 
 - [ ] ImageNet
