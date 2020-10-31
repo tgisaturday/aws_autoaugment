@@ -19,16 +19,16 @@ import torch.distributed as dist
 from tqdm import tqdm
 from theconf import Config as C, ConfigArgumentParser
 
-from FastAutoAugment.common import get_logger, EMA, add_filehandler
-from FastAutoAugment.data import get_dataloaders
-from FastAutoAugment.lr_scheduler import adjust_learning_rate_resnet
-from FastAutoAugment.metrics import accuracy, Accumulator, CrossEntropyLabelSmooth
-from FastAutoAugment.networks import get_model, num_class
-from FastAutoAugment.tf_port.rmsprop import RMSpropTF
-from FastAutoAugment.aug_mixup import CrossEntropyMixUpLabelSmooth, mixup
+from AWSAutoAugment.common import get_logger, EMA, add_filehandler
+from AWSAutoAugment.data import get_dataloaders
+from AWSAutoAugment.lr_scheduler import adjust_learning_rate_resnet
+from AWSAutoAugment.metrics import accuracy, Accumulator, CrossEntropyLabelSmooth
+from AWSAutoAugment.networks import get_model, num_class
+from AWSAutoAugment.tf_port.rmsprop import RMSpropTF
+from AWSAutoAugment.aug_mixup import CrossEntropyMixUpLabelSmooth, mixup
 from warmup_scheduler import GradualWarmupScheduler
 
-logger = get_logger('Fast AutoAugment')
+logger = get_logger('AWS AutoAugment')
 logger.setLevel(logging.INFO)
 
 

@@ -82,16 +82,10 @@ def Solarize(img, v):  # [0, 256]
     return PIL.ImageOps.solarize(img, v)
 
 
-def Posterize(img, v):  # [4, 8]
-    assert 4 <= v <= 8
+def Posterize(img, v): 
     v = int(v)
     return PIL.ImageOps.posterize(img, v)
 
-
-def Posterize2(img, v):  # [0, 4]
-    assert 0 <= v <= 4
-    v = int(v)
-    return PIL.ImageOps.posterize(img, v)
 
 
 def Contrast(img, v):  # [0.1,1.9]
@@ -153,32 +147,46 @@ def SamplePairing(imgs):  # [0, 0.4]
     return f
 
 
-def augment_list(for_autoaug=True):  # 16 oeprations and their ranges
+def augment_list():  # 36 operations
     l = [
-        (ShearX, -0.3, 0.3),  # 0
-        (ShearY, -0.3, 0.3),  # 1
-        (TranslateX, -0.45, 0.45),  # 2
-        (TranslateY, -0.45, 0.45),  # 3
-        (Rotate, -30, 30),  # 4
-        (AutoContrast, 0, 1),  # 5
-        (Invert, 0, 1),  # 6
-        (Equalize, 0, 1),  # 7
-        (Solarize, 0, 256),  # 8
-        (Posterize, 4, 8),  # 9
-        (Contrast, 0.1, 1.9),  # 10
-        (Color, 0.1, 1.9),  # 11
-        (Brightness, 0.1, 1.9),  # 12
-        (Sharpness, 0.1, 1.9),  # 13
-        (Cutout, 0, 0.2),  # 14
-        # (SamplePairing(imgs), 0, 0.4),  # 15
+        (ShearX, -0.1, 0.1),  # 0
+        (ShearX, -0.2, 0.2),  # 1     
+        (ShearX, -0.3, 0.3),  # 2    
+        (ShearY, -0.1, 0.1),  # 3
+        (ShearY, -0.2, 0.2),  # 4        
+        (ShearY, -0.3, 0.3),  # 5
+        (TranslateX, -0.15, 0.15),  # 6
+        (TranslateX, -0.3, 0.3),    # 7
+        (TranslateX, -0.45, 0.45),  # 8
+        (TranslateY, -0.15, 0.15),  # 9
+        (TranslateY, -0.3, 0.3),    # 10      
+        (TranslateY, -0.45, 0.45),  # 11
+        (Rotate, -10, 10),  # 12
+        (Rotate, -20, 20),  # 13
+        (Rotate, -30, 30),  # 14 
+        (Color, 0.1, 0.3),  # 15 
+        (Color, 0.1, 0.6),  # 16         
+        (Color, 0.1, 0.9),  # 17       
+        (Solarize, 0, 26),  # 18
+        (Solarize, 0, 102),  # 19
+        (Solarize, 0, 179),  # 20       
+        (Posterize, 4, 4.4),  # 21
+        (Posterize, 4, 5.6),  # 22    
+        (Posterize, 4, 6.8),  # 23        
+        (Contrast, 0.1, 1.3),  # 24   
+        (Contrast, 0.1, 1.6),  # 25     
+        (Contrast, 0.1, 1.9),  # 26
+        (Sharpness, 0.1, 1.3),  # 27
+        (Sharpness, 0.1, 1.6),  # 28
+        (Sharpness, 0.1, 1.9),  # 29        
+        (Brightness, 0.1, 1.9),  # 30       
+        (Brightness, 0.1, 1.9),  # 31     
+        (Brightness, 0.1, 1.9),  # 32             
+        (AutoContrast, 0, 1),  # 33
+        (Equalize, 0, 1),  # 34          
+        (Invert, 0, 1),  # 35
+  
     ]
-    if for_autoaug:
-        l += [
-            (CutoutAbs, 0, 20),  # compatible with auto-augment
-            (Posterize2, 0, 4),  # 9
-            (TranslateXAbs, 0, 10),  # 9
-            (TranslateYAbs, 0, 10),  # 9
-        ]
     return l
 
 
@@ -213,3 +221,44 @@ class Lighting(object):
             .sum(1).squeeze()
 
         return img.add(rgb.view(3, 1, 1).expand_as(img))
+
+class CutoutDefault(object):
+    """
+    Reference : https://github.com/quark0/darts/blob/master/cnn/utils.py
+    """
+    def __init__(self, length):
+        self.length = length
+
+    def __call__(self, img):
+        h, w = img.size(1), img.size(2)
+        mask = np.ones((h, w), np.float32)
+        y = np.random.randint(h)
+        x = np.random.randint(w)
+
+        y1 = np.clip(y - self.length // 2, 0, h)
+        y2 = np.clip(y + self.length // 2, 0, h)
+        x1 = np.clip(x - self.length // 2, 0, w)
+        x2 = np.clip(x + self.length // 2, 0, w)
+
+        mask[y1: y2, x1: x2] = 0.
+        mask = torch.from_numpy(mask)
+        mask = mask.expand_as(img)
+        img *= mask
+        return img
+
+
+class Augmentation(object):
+    def __init__(self, policies):
+        self.policies = policies
+
+    def __call__(self, img):
+        for _ in range(1):
+            policy = random.choice(self.policies)
+            for name, pr, level in policy:
+                if random.random() > pr:
+                    continue
+                img = apply_augment(img, name, level)
+        return img
+
+
+    

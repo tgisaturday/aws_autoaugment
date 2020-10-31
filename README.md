@@ -11,6 +11,7 @@ Unofficial [AWS AutoAugment](https://arxiv.org/abs/2009.14737 ) implementation i
 ## To-do
 ### Essentials
 - [x] baseline structure
+- [x] augmentation list
 - [ ] shared policy
 - [ ] augmentaition-wise shared model weights
 - [ ] PPO+baseline trick

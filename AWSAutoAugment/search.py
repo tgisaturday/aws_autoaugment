@@ -7,308 +7,282 @@ from collections import OrderedDict, defaultdict
 import torch
 
 import numpy as np
-from hyperopt import hp
-import ray
-import gorilla
-from ray.tune.trial import Trial
-from ray.tune.trial_runner import TrialRunner
-from ray.tune.suggest import HyperOptSearch
-from ray.tune import register_trainable, run_experiments
+
 from tqdm import tqdm
 
-from FastAutoAugment.archive import remove_deplicates, policy_decoder
-from FastAutoAugment.augmentations import augment_list
-from FastAutoAugment.common import get_logger, add_filehandler
-from FastAutoAugment.data import get_dataloaders
-from FastAutoAugment.metrics import Accumulator
-from FastAutoAugment.networks import get_model, num_class
-from FastAutoAugment.train import train_and_eval
+#from FastAutoAugment.archive import remove_deplicates, policy_decoder
+from AWSAutoAugment.augmentations import augment_list
+from AWSAutoAugment.common import get_logger, add_filehandler
+from AWSAutoAugment.data import get_dataloaders
+from AWSAutoAugment.metrics import Accumulator
+from AWSAutoAugment.networks import get_model, num_class
+from AWSAutoAugment.train import train_and_eval
+from AWSAutoAugment.PPO import Controller
 from theconf import Config as C, ConfigArgumentParser
 
 
-top1_valid_by_cv = defaultdict(lambda: list)
+#from hyperopt import hp
+#import ray
+#import gorilla
+#from ray.tune.trial import Trial
+#from ray.tune.trial_runner import TrialRunner
+#from ray.tune.suggest import HyperOptSearch
+#from ray.tune import register_trainable, run_experiments
+
+logger = get_logger('AWS AutoAugment')
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--path', type=str, default='./results')
+parser.add_argument('--dataroot', type=str, default='./data')
+parser.add_argument('--gpu', help='gpu available', default='0,1,2,3')
+parser.add_argument('--resume', action='store_true')
+parser.add_argument('--manual_seed', default=0, type=int)
+
+""" run config """
+parser.add_argument('--n_epochs', type=int, default=10)
+parser.add_argument('--init_lr', type=float, default=0.025)
+parser.add_argument('--lr_schedule', type=str, default='cosine')
+parser.add_argument('--cutout', type=int, default=0)
+parser.add_argument('--label_smoothing', type=float, default=0.0)
+# lr_schedule_param
+
+parser.add_argument('--dataset', type=str, default='cifar100', choices=['cifar10', 'cifar100','imagenet'])
+parser.add_argument('--model', type=str, default='wresnet28_10', choices=[ 'wresnet28_10'])
+parser.add_argument('--batch_size', type=int, default=256)
+parser.add_argument('--valid_size', type=int, default=10000)
+
+parser.add_argument('--opt_type', type=str, default='sgd', choices=['sgd'])
+parser.add_argument('--momentum', type=float, default=0.9)  # opt_param
+parser.add_argument('--no_nesterov', action='store_true')  # opt_param
+parser.add_argument('--weight_decay', type=float, default=1e-4)
+parser.add_argument('--n_worker', type=int, default=16)
+
+# policy search config
+""" policy  search algo and warmup """
+parser.add_argument('--policy_algo', type=str, default='rl', choices=['rl'])
+parser.add_argument('--warmup_epochs', type=int, default=200)
+parser.add_argument('--finetune_epochs', type=int, default=10)
+parser.add_argument('--policy_steps', type=int, default=500)
+parser.add_argument('--reward_ema_decay', type=float, default=0.9)
+
+""" policy hyper-parameters """
+parser.add_argument('--policy_init_type', type=str, default='uniform', choices=['normal', 'uniform'])
+parser.add_argument('--policy_opt_type', type=str, default='adam', choices=['adam'])
+parser.add_argument('--policy_lr', type=float, default=0.1)
+parser.add_argument('--policy_adam_beta1', type=float, default=0.5)  # arch_opt_param
+parser.add_argument('--policy_adam_beta2', type=float, default=0.999)  # arch_opt_param
+parser.add_argument('--policy_adam_eps', type=float, default=1e-8)  # arch_opt_param
+parser.add_argument('--policy_weight_decay', type=float, default=0)
+parser.add_argument('--policy_clip_epsilon', type=float, default=0.2)
+parser.add_argument('--policy_entropy_weight', type=float, default=1e-5)
 
 
-def step_w_log(self):
-    original = gorilla.get_original_attribute(ray.tune.trial_runner.TrialRunner, 'step')
+logger = get_logger('AWSAugment')
+logger.setLevel(logging.INFO)
 
-    # log
-    cnts = OrderedDict()
-    for status in [Trial.RUNNING, Trial.TERMINATED, Trial.PENDING, Trial.PAUSED, Trial.ERROR]:
-        cnt = len(list(filter(lambda x: x.status == status, self._trials)))
-        cnts[status] = cnt
-    best_top1_acc = 0.
-    for trial in filter(lambda x: x.status == Trial.TERMINATED, self._trials):
-        if not trial.last_result:
-            continue
-        best_top1_acc = max(best_top1_acc, trial.last_result['top1_valid'])
-    print('iter', self._iteration, 'top1_acc=%.3f' % best_top1_acc, cnts, end='\r')
-    return original(self)
+def run_epoch(model, loader, loss_fn, optimizer, desc_default='', epoch=0, writer=None, verbose=1, scheduler=None):
+    tqdm_disable = bool(os.environ.get('TASK_NAME', ''))    # KakaoBrain Environment
+    if verbose:
+        loader = tqdm(loader, disable=tqdm_disable)
+        loader.set_description('[%s %04d/%04d]' % (desc_default, epoch, C.get()['epoch']))
 
-
-patch = gorilla.Patch(ray.tune.trial_runner.TrialRunner, 'step', step_w_log, settings=gorilla.Settings(allow_hit=True))
-gorilla.apply(patch)
-
-
-logger = get_logger('Fast AutoAugment')
-
-
-def _get_path(dataset, model, tag):
-    return os.path.join(os.path.dirname(os.path.realpath(__file__)), 'models/%s_%s_%s.model' % (dataset, model, tag))     # TODO
-
-
-@ray.remote(num_gpus=4, max_calls=1)
-def train_model(config, dataroot, augment, cv_ratio_test, cv_fold, save_path=None, skip_exist=False):
-    C.get()
-    C.get().conf = config
-    C.get()['aug'] = augment
-
-    result = train_and_eval(None, dataroot, cv_ratio_test, cv_fold, save_path=save_path, only_eval=skip_exist)
-    return C.get()['model']['type'], cv_fold, result
-
-
-def eval_tta(config, augment, reporter):
-    C.get()
-    C.get().conf = config
-    cv_ratio_test, cv_fold, save_path = augment['cv_ratio_test'], augment['cv_fold'], augment['save_path']
-
-    # setup - provided augmentation rules
-    C.get()['aug'] = policy_decoder(augment, augment['num_policy'], augment['num_op'])
-
-    # eval
-    model = get_model(C.get()['model'], num_class(C.get()['dataset']))
-    ckpt = torch.load(save_path)
-    if 'model' in ckpt:
-        model.load_state_dict(ckpt['model'])
-    else:
-        model.load_state_dict(ckpt)
-    model.eval()
-
-    loaders = []
-    for _ in range(augment['num_policy']):  # TODO
-        _, tl, validloader, tl2 = get_dataloaders(C.get()['dataset'], C.get()['batch'], augment['dataroot'], cv_ratio_test, split_idx=cv_fold)
-        loaders.append(iter(validloader))
-        del tl, tl2
-
-    start_t = time.time()
     metrics = Accumulator()
-    loss_fn = torch.nn.CrossEntropyLoss(reduction='none')
-    try:
-        while True:
-            losses = []
-            corrects = []
-            for loader in loaders:
-                data, label = next(loader)
-                data = data.cuda()
-                label = label.cuda()
+    cnt = 0
+    total_steps = len(loader)
+    steps = 0
+    for data, label in loader:
+        steps += 1
+        data, label = data.cuda(), label.cuda()
 
-                pred = model(data)
+        if optimizer:
+            optimizer.zero_grad()
 
-                loss = loss_fn(pred, label)
-                losses.append(loss.detach().cpu().numpy())
+        preds = model(data)
+        loss = loss_fn(preds, label)
 
-                _, pred = pred.topk(1, 1, True, True)
-                pred = pred.t()
-                correct = pred.eq(label.view(1, -1).expand_as(pred)).detach().cpu().numpy()
-                corrects.append(correct)
-                del loss, correct, pred, data, label
+        if optimizer:
+            loss.backward()
+            if C.get()['optimizer'].get('clip', 5) > 0:
+                nn.utils.clip_grad_norm_(model.parameters(), C.get()['optimizer'].get('clip', 5))
+            optimizer.step()
 
-            losses = np.concatenate(losses)
-            losses_min = np.min(losses, axis=0).squeeze()
+        top1, top5 = accuracy(preds, label, (1, 5))
+        metrics.add_dict({
+            'loss': loss.item() * len(data),
+            'top1': top1.item() * len(data),
+            'top5': top5.item() * len(data),
+        })
+        cnt += len(data)
+        if verbose:
+            postfix = metrics / cnt
+            if optimizer:
+                postfix['lr'] = optimizer.param_groups[0]['lr']
+            loader.set_postfix(postfix)
 
-            corrects = np.concatenate(corrects)
-            corrects_max = np.max(corrects, axis=0).squeeze()
-            metrics.add_dict({
-                'minus_loss': -1 * np.sum(losses_min),
-                'correct': np.sum(corrects_max),
-                'cnt': len(corrects_max)
-            })
-            del corrects, corrects_max
-    except StopIteration:
-        pass
+        if scheduler is not None:
+            scheduler.step(epoch - 1 + float(steps) / total_steps)
 
-    del model
-    metrics = metrics / 'cnt'
-    gpu_secs = (time.time() - start_t) * torch.cuda.device_count()
-    reporter(minus_loss=metrics['minus_loss'], top1_valid=metrics['correct'], elapsed_time=gpu_secs, done=True)
-    return metrics['correct']
+        del preds, loss, top1, top5, data, label
 
+    if tqdm_disable:
+        if optimizer:
+            logger.info('[%s %03d/%03d] %s lr=%.6f', desc_default, epoch, C.get()['epoch'], metrics / cnt, optimizer.param_groups[0]['lr'])
+        else:
+            logger.info('[%s %03d/%03d] %s', desc_default, epoch, C.get()['epoch'], metrics / cnt)
+
+    metrics /= cnt
+    if optimizer:
+        metrics.metrics['lr'] = optimizer.param_groups[0]['lr']
+    if verbose:
+        for key, value in metrics.items():
+            writer.add_scalar(key, value, epoch)
+    return metrics
+
+def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, shared=False):
+
+    max_epoch = epoch
+    trainsampler, trainloader, validloader, testloader_ = get_dataloaders(args, policy, test_ratio, split_idx=cv_fold)
+
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.SGD(
+            model.parameters(),
+            lr=arg.init_lr,
+            momentum=args.momentum
+            weight_decay=arg.weight_decay
+            nesterov=not args.no_nesterov,
+        )
+
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epoch, eta_min=0.)
+    
+    result = OrderedDict()
+    epoch_start = 1
+    if save_path and os.path.exists(save_path):
+        logger.info('%s file found. loading...' % save_path)
+        data = torch.load(save_path)
+        if 'model' in data or 'state_dict' in data:
+            key = 'model' if 'model' in data else 'state_dict'
+            logger.info('checkpoint epoch@%d' % data['epoch'])
+            if not isinstance(model, DataParallel):
+                model.load_state_dict({k.replace('module.', ''): v for k, v in data[key].items()})
+            else:
+                model.load_state_dict({k if 'module.' in k else 'module.'+k: v for k, v in data[key].items()})
+            optimizer.load_state_dict(data['optimizer'])
+            if data['epoch'] < epoch:
+                epoch_start = data['epoch']
+            else:
+                only_eval = True
+        else:
+            model.load_state_dict({k: v for k, v in data.items()})
+        del data
+    else:
+        logger.info('"%s" file not found. skip to pretrain weights...' % save_path)
+        if only_eval:
+            logger.warning('model checkpoint not found. only-evaluation mode is off.')
+        only_eval = False
+
+    # train loop
+    best_top1 = 0
+    for epoch in range(epoch_start, max_epoch + 1):
+        model.train()
+        rs = dict()
+        rs['train'] = run_epoch(model, trainloader, criterion, optimizer, desc_default='train', epoch=epoch, writer=writers[0], verbose=True, scheduler=scheduler)
+        model.eval()
+
+        if math.isnan(rs['train']['loss']):
+            raise Exception('train loss is NaN.')
+
+        if epoch % 5 == 0 or epoch == max_epoch:
+            rs['valid'] = run_epoch(model, validloader, criterion, None, desc_default='valid', epoch=epoch, writer=writers[1], verbose=True)
+            rs['test'] = run_epoch(model, testloader_, criterion, None, desc_default='*test', epoch=epoch, writer=writers[2], verbose=True)
+
+            if metric == 'last' or rs[metric]['top1'] > best_top1:
+                if metric != 'last':
+                    best_top1 = rs[metric]['top1']
+                for key, setname in itertools.product(['loss', 'top1', 'top5'], ['train', 'valid', 'test']):
+                    result['%s_%s' % (key, setname)] = rs[setname][key]
+                result['epoch'] = epoch
+
+                writers[1].add_scalar('valid_top1/best', rs['valid']['top1'], epoch)
+                writers[2].add_scalar('test_top1/best', rs['test']['top1'], epoch)
+
+                reporter(
+                    loss_valid=rs['valid']['loss'], top1_valid=rs['valid']['top1'],
+                    loss_test=rs['test']['loss'], top1_test=rs['test']['top1']
+                )
+
+                # save checkpoint
+                if save_path:
+                    logger.info('save model@%d to %s' % (epoch, save_path))
+                    torch.save({
+                        'epoch': epoch,
+                        'log': {
+                            'train': rs['train'].get_dict(),
+                            'valid': rs['valid'].get_dict(),
+                            'test': rs['test'].get_dict(),
+                        },
+                        'optimizer': optimizer.state_dict(),
+                        'model': model.state_dict()
+                    }, save_path)
+                    torch.save({
+                        'epoch': epoch,
+                        'log': {
+                            'train': rs['train'].get_dict(),
+                            'valid': rs['valid'].get_dict(),
+                            'test': rs['test'].get_dict(),
+                        },
+                        'optimizer': optimizer.state_dict(),
+                        'model': model.state_dict()
+                    }, save_path.replace('.pth', '_e%d_top1_%.3f_%.3f' % (epoch, rs['train']['top1'], rs['test']['top1']) + '.pth'))
+
+    result['top1_test'] = best_top1
+    if shared:
+        return model, result
+    else:
+        del model
+        return result
 
 if __name__ == '__main__':
-    import json
-    from pystopwatch2 import PyStopwatch
-    w = PyStopwatch()
-
-    parser = ConfigArgumentParser(conflict_handler='resolve')
-    parser.add_argument('--dataroot', type=str, default='/data/private/pretrainedmodels', help='torchvision data folder')
-    parser.add_argument('--until', type=int, default=5)
-    parser.add_argument('--num-op', type=int, default=2)
-    parser.add_argument('--num-policy', type=int, default=5)
-    parser.add_argument('--num-search', type=int, default=200)
-    parser.add_argument('--cv-ratio', type=float, default=0.4)
-    parser.add_argument('--decay', type=float, default=-1)
-    parser.add_argument('--redis', type=str, default='gpu-cloud-vnode30.dakao.io:23655')
-    parser.add_argument('--per-class', action='store_true')
-    parser.add_argument('--resume', action='store_true')
-    parser.add_argument('--smoke-test', action='store_true')
     args = parser.parse_args()
+    args.path = args.path+'/'+args.dataset+'/'+args.model
+    
+    args.conf = {
+        'type': args.model,
+        'dataset': args.dataset,
+    }    
+         
+    torch.manual_seed(args.manual_seed)
+    torch.cuda.manual_seed_all(args.manual_seed)
+    np.random.seed(args.manual_seed)
+    
+    os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
+    os.makedirs(args.path, exist_ok=True)
+    curr_weights = get_model(conf, num_class(args.dataset))   
+    
+    current_policy = policy_decode(policy)
+    # stage 1 training to get aws
+    shared_weights, reward = train_and_eval(args, curr_weights, args.warmup_epoch, current_policy, test_ratio=0.0, cv_fold=0, shared=True)
+    logger.info('[Stage 1 top1-test: %3d', reward)
 
-    if args.decay > 0:
-        logger.info('decay=%.4f' % args.decay)
-        C.get()['optimizer']['decay'] = args.decay
+    #stage 2 policy update with PPO
+    betas = (args.policy_adam_beta1, args.policy_adam_beta2)
+    controller = Controller(args, args.policy_lr, betas, args.policy_clip_epsilon, args.policy_entropy_weight)
+    
+    for t in range(args.policy_steps):
+        curr_weights = shared_weights
+        logger.info('Controller: Epoch %d / %d' % (t+1, args.policy_steps))
+        softmaxes, log_softmaxes, subpolicies = controller.predict(SUBPOLICIES)
+        for i, subpolicy in enumerate(subpolicies):
+            logger.info('# Sub-policy %d' % (i+1))
+            logger.info(subpolicy)
 
-    add_filehandler(logger, os.path.join('models', '%s_%s_cv%.1f.log' % (C.get()['dataset'], C.get()['model']['type'], args.cv_ratio)))
-    logger.info('configuration...')
-    logger.info(json.dumps(C.get().conf, sort_keys=True, indent=4))
-    logger.info('initialize ray...')
-    ray.init(redis_address=args.redis)
-
-    num_result_per_cv = 10
-    cv_num = 5
-    copied_c = copy.deepcopy(C.get().conf)
-
-    logger.info('search augmentation policies, dataset=%s model=%s' % (C.get()['dataset'], C.get()['model']['type']))
-    logger.info('----- Train without Augmentations cv=%d ratio(test)=%.1f -----' % (cv_num, args.cv_ratio))
-    w.start(tag='train_no_aug')
-    paths = [_get_path(C.get()['dataset'], C.get()['model']['type'], 'ratio%.1f_fold%d' % (args.cv_ratio, i)) for i in range(cv_num)]
-    print(paths)
-    reqs = [
-        train_model.remote(copy.deepcopy(copied_c), args.dataroot, C.get()['aug'], args.cv_ratio, i, save_path=paths[i], skip_exist=True)
-        for i in range(cv_num)]
-
-    tqdm_epoch = tqdm(range(C.get()['epoch']))
-    is_done = False
-    for epoch in tqdm_epoch:
-        while True:
-            epochs_per_cv = OrderedDict()
-            for cv_idx in range(cv_num):
-                try:
-                    latest_ckpt = torch.load(paths[cv_idx])
-                    if 'epoch' not in latest_ckpt:
-                        epochs_per_cv['cv%d' % (cv_idx + 1)] = C.get()['epoch']
-                        continue
-                    epochs_per_cv['cv%d' % (cv_idx+1)] = latest_ckpt['epoch']
-                except Exception as e:
-                    continue
-            tqdm_epoch.set_postfix(epochs_per_cv)
-            if len(epochs_per_cv) == cv_num and min(epochs_per_cv.values()) >= C.get()['epoch']:
-                is_done = True
-            if len(epochs_per_cv) == cv_num and min(epochs_per_cv.values()) >= epoch:
-                break
-            time.sleep(10)
-        if is_done:
-            break
-
-    logger.info('getting results...')
-    pretrain_results = ray.get(reqs)
-    for r_model, r_cv, r_dict in pretrain_results:
-        logger.info('model=%s cv=%d top1_train=%.4f top1_valid=%.4f' % (r_model, r_cv+1, r_dict['top1_train'], r_dict['top1_valid']))
-    logger.info('processed in %.4f secs' % w.pause('train_no_aug'))
-
-    if args.until == 1:
-        sys.exit(0)
-
-    logger.info('----- Search Test-Time Augmentation Policies -----')
-    w.start(tag='search')
-
-    ops = augment_list(False)
-    space = {}
-    for i in range(args.num_policy):
-        for j in range(args.num_op):
-            space['policy_%d_%d' % (i, j)] = hp.choice('policy_%d_%d' % (i, j), list(range(0, len(ops))))
-            space['prob_%d_%d' % (i, j)] = hp.uniform('prob_%d_ %d' % (i, j), 0.0, 1.0)
-            space['level_%d_%d' % (i, j)] = hp.uniform('level_%d_ %d' % (i, j), 0.0, 1.0)
-
-    final_policy_set = []
-    total_computation = 0
-    reward_attr = 'top1_valid'      # top1_valid or minus_loss
-    for _ in range(1):  # run multiple times.
-        for cv_fold in range(cv_num):
-            name = "search_%s_%s_fold%d_ratio%.1f" % (C.get()['dataset'], C.get()['model']['type'], cv_fold, args.cv_ratio)
-            print(name)
-            register_trainable(name, lambda augs, rpt: eval_tta(copy.deepcopy(copied_c), augs, rpt))
-            algo = HyperOptSearch(space, max_concurrent=4*20, reward_attr=reward_attr)
-
-            exp_config = {
-                name: {
-                    'run': name,
-                    'num_samples': 4 if args.smoke_test else args.num_search,
-                    'resources_per_trial': {'gpu': 1},
-                    'stop': {'training_iteration': args.num_policy},
-                    'config': {
-                        'dataroot': args.dataroot, 'save_path': paths[cv_fold],
-                        'cv_ratio_test': args.cv_ratio, 'cv_fold': cv_fold,
-                        'num_op': args.num_op, 'num_policy': args.num_policy
-                    },
-                }
-            }
-            results = run_experiments(exp_config, search_alg=algo, scheduler=None, verbose=0, queue_trials=True, resume=args.resume, raise_on_failed_trial=False)
-            print()
-            results = [x for x in results if x.last_result is not None]
-            results = sorted(results, key=lambda x: x.last_result[reward_attr], reverse=True)
-
-            # calculate computation usage
-            for result in results:
-                total_computation += result.last_result['elapsed_time']
-
-            for result in results[:num_result_per_cv]:
-                final_policy = policy_decoder(result.config, args.num_policy, args.num_op)
-                logger.info('loss=%.12f top1_valid=%.4f %s' % (result.last_result['minus_loss'], result.last_result['top1_valid'], final_policy))
-
-                final_policy = remove_deplicates(final_policy)
-                final_policy_set.extend(final_policy)
-
-    logger.info(json.dumps(final_policy_set))
-    logger.info('final_policy=%d' % len(final_policy_set))
-    logger.info('processed in %.4f secs, gpu hours=%.4f' % (w.pause('search'), total_computation / 3600.))
-    logger.info('----- Train with Augmentations model=%s dataset=%s aug=%s ratio(test)=%.1f -----' % (C.get()['model']['type'], C.get()['dataset'], C.get()['aug'], args.cv_ratio))
-    w.start(tag='train_aug')
-
-    num_experiments = 5
-    default_path = [_get_path(C.get()['dataset'], C.get()['model']['type'], 'ratio%.1f_default%d' % (args.cv_ratio, _)) for _ in range(num_experiments)]
-    augment_path = [_get_path(C.get()['dataset'], C.get()['model']['type'], 'ratio%.1f_augment%d' % (args.cv_ratio, _)) for _ in range(num_experiments)]
-    reqs = [train_model.remote(copy.deepcopy(copied_c), args.dataroot, C.get()['aug'], 0.0, 0, save_path=default_path[_], skip_exist=True) for _ in range(num_experiments)] + \
-        [train_model.remote(copy.deepcopy(copied_c), args.dataroot, final_policy_set, 0.0, 0, save_path=augment_path[_]) for _ in range(num_experiments)]
-
-    tqdm_epoch = tqdm(range(C.get()['epoch']))
-    is_done = False
-    for epoch in tqdm_epoch:
-        while True:
-            epochs = OrderedDict()
-            for exp_idx in range(num_experiments):
-                try:
-                    if os.path.exists(default_path[exp_idx]):
-                        latest_ckpt = torch.load(default_path[exp_idx])
-                        epochs['default_exp%d' % (exp_idx + 1)] = latest_ckpt['epoch']
-                except:
-                    pass
-                try:
-                    if os.path.exists(augment_path[exp_idx]):
-                        latest_ckpt = torch.load(augment_path[exp_idx])
-                        epochs['augment_exp%d' % (exp_idx + 1)] = latest_ckpt['epoch']
-                except:
-                    pass
-
-            tqdm_epoch.set_postfix(epochs)
-            if len(epochs) == num_experiments*2 and min(epochs.values()) >= C.get()['epoch']:
-                is_done = True
-            if len(epochs) == num_experiments*2 and min(epochs.values()) >= epoch:
-                break
-            time.sleep(10)
-        if is_done:
-            break
-
-    logger.info('getting results...')
-    final_results = ray.get(reqs)
-
-    for train_mode in ['default', 'augment']:
-        avg = 0.
-        for _ in range(num_experiments):
-            r_model, r_cv, r_dict = final_results.pop(0)
-            logger.info('[%s] top1_train=%.4f top1_test=%.4f' % (train_mode, r_dict['top1_train'], r_dict['top1_test']))
-            avg += r_dict['top1_test']
-        avg /= num_experiments
-        logger.info('[%s] top1_test average=%.4f (#experiments=%d)' % (train_mode, avg, num_experiments))
-    logger.info('processed in %.4f secs' % w.pause('train_aug'))
-
-    logger.info(w)
+        new_reward = train_and_eval(args, curr_weights, args.finetune_epoch, subpolicies , test_ratio=0.0, cv_fold=0)
+        if t == 0:
+            reward = new_reward
+        else:
+            reward = args.reward_ema_decay * reward + (1- args.reward_ema_decay) * new_reward           
+        controller.update(reward)
+        
+    logger.info('Best policies found.')         
+    for i, subpolicy in enumerate(subpolicies):
+        logger.info('# Sub-policy %d' % (i+1))
+        logger.info(subpolicy)
