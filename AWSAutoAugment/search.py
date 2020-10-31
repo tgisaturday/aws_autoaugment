@@ -19,7 +19,7 @@ from common import get_logger, add_filehandler
 from data import get_dataloaders
 from metrics import *
 from networks import get_model, num_class
-from PPO import Controller
+from PPO import PPO
 
 
 
@@ -83,7 +83,7 @@ parser.add_argument('--policy_entropy_weight', type=float, default=1e-5)
 """ controller hyper-parameters """
 parser.add_argument('--policy_embedding_size', type=int, default=32)
 parser.add_argument('--policy_hidden_size', type=int, default=100)
-parser.add_argument('--policy_subpolices', type=int, default=5) # number of subpolicies
+parser.add_argument('--policy_subpolices', type=int, default=25) # number of subpolicies
 logger = get_logger('AWSAugment')
 logger.setLevel(logging.INFO)
 
@@ -213,13 +213,13 @@ if __name__ == '__main__':
     #stage 2 policy update with PPO
     betas = (args.policy_adam_beta1, args.policy_adam_beta2)
     
-    controller = Controller(args.policy_lr, betas, args.policy_clip_epsilon, 
+    policy = PPO(args.policy_lr, betas, args.policy_clip_epsilon, 
                             args.policy_entropy_weight,args.policy_embedding_size, 
                             args.policy_hidden_size, args.policy_subpolices,device)
-    
-    controller.to(device)
+    controller = policy.controller
+
     for t in range(args.policy_steps):
-        curr_weights = shared_weights
+        curr_weights = copy.deepcopy(shared_weights)
         policy_fp = open(args.policy_path, 'a')
         logger.info('Controller: Epoch %d / %d' % (t+1, args.policy_steps))
         print('-----Controller: Epoch %d / %d-----' % (t+1, args.policy_steps), file=policy_fp)
@@ -230,14 +230,14 @@ if __name__ == '__main__':
             print('# Sub-policy {}: {}'.format(i+1, subpolicy), file=policy_fp)            
         policy_fp.close()
         result = train_and_eval(args, curr_weights, args.finetune_epochs, subpolicies , test_ratio=0.2, cv_fold=0)
-        reward = result['top1_valid']
+        new_reward = result['top1_valid']
         logger.info('[Stage 1 top1-valid: %3d', result['top1_valid'])
         logger.info('[Stage 1 top1-test: %3d', result['top1_test'])            
         if t == 0:
             reward = new_reward
         else:
             reward = args.reward_ema_decay * reward + (1- args.reward_ema_decay) * new_reward           
-        controller.update(reward)
+        policy.update(actions_index, reward)
         
     logger.info('Best policies found.')         
     for i, subpolicy in enumerate(subpolicies):

@@ -44,19 +44,54 @@ class Subpolicy:
         return ret    
     
 
-      
-class Controller(nn.Module):
+class PPO(object):
     def __init__(self, lr, betas, clip_epsilon, entropy_weight,embedding_size, hidden_size, subpolicies ,device):
-        super(Controller, self).__init__()        
         self.lr = lr
         self.betas = betas
         self.clip_epsilon = clip_epsilon
-        self.entropy_weight = entropy_weight     
+        self.entropy_weight = entropy_weight    
+        self.controller = Controller(embedding_size, hidden_size, subpolicies ,device).to(device)
+        self.optimizer = torch.optim.Adam(params=self.controller.parameters(), lr=self.lr, betas = self.betas)
+        self.device = device
+        
+    def update(self, actions_index, reward): 
+        actions_p, actions_log_p = self.controller.get_p(actions_index)        
+        loss = self.cal_loss(actions_p, actions_log_p, reward)
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+       
+    
+    def clip(self, actions_importance):
+        lower = torch.ones_like(actions_importance).to(self.device) * (1 - self.clip_epsilon)
+        upper = torch.ones_like(actions_importance).to(self.device) * (1 + self.clip_epsilon)
+
+        actions_importance, _ = torch.min(torch.cat([actions_importance.unsqueeze(0), upper.unsqueeze(0)], dim=0), dim=0)
+        actions_importance, _ = torch.max(torch.cat([actions_importance.unsqueeze(0), lower.unsqueeze(0)], dim=0), dim=0)
+
+        return actions_importance   
+    
+    def cal_loss(self, actions_p, actions_log_p, reward):
+        actions_importance = actions_p
+        clipped_actions_importance = self.clip(actions_importance)
+        actions_reward = actions_importance * reward
+        clipped_actions_reward = clipped_actions_importance * reward
+
+        actions_reward, _ = torch.min(torch.cat([actions_reward.unsqueeze(0), clipped_actions_reward.unsqueeze(0)], dim=0), dim=0)
+        policy_loss = -1 * torch.sum(actions_reward)
+        entropy = -1 * torch.sum(actions_p * actions_log_p)
+        entropy_bonus = -1 * entropy * self.entropy_weight
+
+        return policy_loss + entropy_bonus
+    
+        
+class Controller(nn.Module):
+    def __init__(self, embedding_size, hidden_size, subpolicies ,device):
+        super(Controller, self).__init__()        
         self.embedding_size = embedding_size
         self.hidden_size = hidden_size
         self.subpolicies = subpolicies
         self.len_OPS = 36 * 36 #number of operation candidates
-        
         self.device = device       
         
         self.embedding = nn.Embedding(self.len_OPS*self.subpolicies, self.embedding_size)    
@@ -115,7 +150,7 @@ class Controller(nn.Module):
             actions_p.append(p)
             actions_log_p.append(log_p)
             
-            input = action_index + self.len_nodes + self.len_OPS
+            input = action_index + self.len_OPS
 
         actions_p = torch.cat(actions_p)
         actions_log_p = torch.cat(actions_log_p)
@@ -148,32 +183,3 @@ class Controller(nn.Module):
 
 
         
-    def update(self, actions_p, actions_log_p): 
-        loss = self.cal_loss(actions_p, actions_log_p, reward)
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
-        
-        return self
-    
-    def clip(self, actions_importance):
-        lower = torch.ones_like(actions_importance).to(self.device) * (1 - self.clip_epsilon)
-        upper = torch.ones_like(actions_importance).to(self.device) * (1 + self.clip_epsilon)
-
-        actions_importance, _ = torch.min(torch.cat([actions_importance.unsqueeze(0), upper.unsqueeze(0)], dim=0), dim=0)
-        actions_importance, _ = torch.max(torch.cat([actions_importance.unsqueeze(0), lower.unsqueeze(0)], dim=0), dim=0)
-
-        return actions_importance   
-    
-    def cal_loss(self, actions_p, actions_log_p, reward):
-        actions_importance = actions_p
-        clipped_actions_importance = self.clip(actions_importance)
-        actions_reward = actions_importance * reward
-        clipped_actions_reward = clipped_actions_importance * reward
-
-        actions_reward, _ = torch.min(torch.cat([actions_reward.unsqueeze(0), clipped_actions_reward.unsqueeze(0)], dim=0), dim=0)
-        policy_loss = -1 * torch.sum(actions_reward)
-        entropy = -1 * torch.sum(actions_p * actions_log_p)
-        entropy_bonus = -1 * entropy * self.entropy_weight
-
-        return policy_loss + entropy_bonus
