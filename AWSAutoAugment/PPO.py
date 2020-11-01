@@ -93,11 +93,11 @@ class Controller(nn.Module):
         self.subpolicies = subpolicies
         self.len_OPS = 36 * 36 #number of operation candidates
         self.device = device       
-        self.embedding = nn.Embedding(self.len_OPS+1, self.embedding_size)    
+        self.embedding = nn.Embedding(self.len_OPS, self.embedding_size)    
         
         #operation 
         self.rnn = nn.LSTMCell(self.embedding_size, hidden_size)
-        self.op_decoder = nn.Linear(hidden_size, self.len_OPS)
+        self.op_decoder = nn.Linear(hidden_size,1)
         
 
         self.init_parameters()
@@ -110,12 +110,18 @@ class Controller(nn.Module):
     
 
     def get_p(self):
-        input = torch.LongTensor([self.len_OPS]).to(self.device)
+        actions_p = []
+        actions_log_p = []
         h_t, c_t = self.init_hidden()            
-        h_t, c_t, logits = self.forward(input, h_t, c_t)
-        sigmoid_logits = F.sigmoid(logits)
-        actions_p = torch.div(sigmoid_logits,torch.sum(sigmoid_logits))
-        actions_log_p = torch.log(actions_p)
+        for i in range(self.len_OPS):
+            input = torch.LongTensor([i]).to(self.device)
+            h_t, c_t, logits = self.forward(input, h_t, c_t)
+            p = torch.sigmoid(logits)
+            log_p = torch.log(p)
+            actions_p.append(p)
+            actions_log_p.append(log_p)
+        actions_p = torch.cat(actions_p)
+        actions_log_p = torch.cat(actions_log_p)
 
         return actions_p, actions_log_p
             
@@ -127,7 +133,7 @@ class Controller(nn.Module):
             op2_idx = actions % 36 
             transformations = augment_list()
             transformations_str = augment_list_by_name()
-            prob = actions_p[0,actions].item()
+            prob = actions_p[actions].item()
             operations.append([transformations[op1_idx],transformations[op2_idx], prob])
             operations_str.append([transformations_str[op1_idx],transformations_str[op2_idx],prob])            
         return operations, operations_str
