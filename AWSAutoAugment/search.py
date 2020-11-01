@@ -10,6 +10,7 @@ import numpy as np
 import math
 import torch.nn as nn
 import itertools
+import operator
 import torch.backends.cudnn as cudnn
 from tqdm import tqdm
 
@@ -84,9 +85,11 @@ parser.add_argument('--policy_entropy_weight', type=float, default=1e-5)
 parser.add_argument('--policy_embedding_size', type=int, default=32)
 parser.add_argument('--policy_hidden_size', type=int, default=100)
 parser.add_argument('--policy_subpolices', type=int, default=25) # number of subpolicies
-logger = get_logger('AWSAugment')
-logger.setLevel(logging.INFO)
 
+logger = get_logger('AWSAugment')
+
+
+        
 def run_epoch( model, loader, loss_fn, optimizer, max_epoch, desc_default='', epoch=0,  scheduler=None):
 
     metrics = Accumulator()
@@ -119,7 +122,6 @@ def run_epoch( model, loader, loss_fn, optimizer, max_epoch, desc_default='', ep
             scheduler.step(epoch - 1 + float(steps) / total_steps)
 
         del preds, loss, top1, top5, data, label
-
 
     if optimizer:
         logger.info('[%s %03d/%03d] %s lr=%.6f', desc_default, epoch, max_epoch, metrics / cnt, optimizer.param_groups[0]['lr'])
@@ -181,16 +183,21 @@ def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, shared
 
 if __name__ == '__main__':
     args = parser.parse_args()
-    args.path = args.path+'/'+args.dataset+'/'+args.model    
+    args.path = args.path+'/'+args.dataset+'/'+args.model+'/'    
+    args.weight_path = args.path + 'shared_weights/'
     args.policy_path = args.path+'/policy.txt'
+    if not os.path.isdir(args.path):
+        os.makedirs(args.path)
+    if not os.path.isdir(args.weight_path):
+        os.makedirs(args.weight_path)   
+        
     args.conf = {
         'type': args.model,
         'dataset': args.dataset,
     }    
          
     torch.manual_seed(args.manual_seed)
-    np.random.seed(args.manual_seed)
-    
+    np.random.seed(args.manual_seed)   
     if torch.cuda.is_available():
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  
         cudnn.benchmark = True
@@ -204,12 +211,17 @@ if __name__ == '__main__':
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
     os.makedirs(args.path, exist_ok=True)
     shared_weights = get_model(args.conf, num_class(args.dataset))   
-    
-    # stage 1 training to get aws
-    shared_weights, result = train_and_eval(args, shared_weights, args.warmup_epochs, policy='uniform', test_ratio=0.2, cv_fold=0, shared=True)
-    logger.info('[Stage 1 top1-valid: %3d', result['top1_valid'])
-    logger.info('[Stage 1 top1-test: %3d', result['top1_test'])
-
+    if args.resume:
+        logger.info('Loading pretrained shared weights')
+        checkpoint = torch.load(args.weight_path+'shared_weights.pth')
+        shared_weights.load_state_dict(checkpoint['model_state_dict'])
+    else:
+        # stage 1 training to get aws
+        shared_weights, result = train_and_eval(args, shared_weights, args.warmup_epochs, policy='uniform', test_ratio=0.2, cv_fold=0, shared=True)
+        logger.info('[Stage 1 top1-valid: %3d', result['top1_valid'])
+        logger.info('[Stage 1 top1-test: %3d', result['top1_test'])
+        torch.save({'model_state_dict':shared_weights.state_dict()}, args.weight_path+'shared_weights.pth')
+        
     #stage 2 policy update with PPO
     betas = (args.policy_adam_beta1, args.policy_adam_beta2)
     
@@ -236,7 +248,8 @@ if __name__ == '__main__':
         if t == 0:
             reward = new_reward
         else:
-            reward = args.reward_ema_decay * reward + (1- args.reward_ema_decay) * new_reward           
+            reward = args.reward_ema_decay * reward + (1- args.reward_ema_decay) * new_reward   
+        logger.info('Controller: Epoch %d / %d: new_reward: %d reward: %d' % (t+1, args.policy_steps,new_reward, reward))            
         policy.update(actions_index, reward)
         
     logger.info('Best policies found.')         

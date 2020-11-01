@@ -94,7 +94,7 @@ class Controller(nn.Module):
         self.len_OPS = 36 * 36 #number of operation candidates
         self.device = device       
         
-        self.embedding = nn.Embedding(self.len_OPS*self.subpolicies, self.embedding_size)    
+        self.embedding = nn.Embedding(self.len_OPS+1, self.embedding_size)    
         
         #operation 
         self.op_decoder = nn.Linear(hidden_size, self.len_OPS)
@@ -117,15 +117,16 @@ class Controller(nn.Module):
         actions_index = []
 
         for subpolicy in range(self.subpolicies):
+            input = torch.LongTensor([self.len_OPS]).to(self.device)
+            h_t, c_t = self.init_hidden()            
             h_t, c_t, logits = self.forward(input, h_t, c_t)
             action_index = Categorical(logits=logits).sample()
+            
             p = F.softmax(logits, dim=-1)[0,action_index]
             log_p = F.log_softmax(logits, dim=-1)[0,action_index]
             actions_p.append(p.detach())
             actions_log_p.append(log_p.detach())
             actions_index.append(action_index)
-            
-            input = action_index + self.len_OPS
 
         actions_p = torch.cat(actions_p)
         actions_log_p = torch.cat(actions_log_p)
