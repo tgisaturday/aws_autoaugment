@@ -93,13 +93,12 @@ class Controller(nn.Module):
         self.subpolicies = subpolicies
         self.len_OPS = 36 * 36 #number of operation candidates
         self.device = device       
-        
         self.embedding = nn.Embedding(self.len_OPS+1, self.embedding_size)    
         
         #operation 
+        self.rnn = nn.LSTMCell(self.embedding_size, hidden_size)
         self.op_decoder = nn.Linear(hidden_size, self.len_OPS)
         
-        self.rnn = nn.LSTMCell(self.embedding_size, hidden_size)
 
         self.init_parameters()
         
