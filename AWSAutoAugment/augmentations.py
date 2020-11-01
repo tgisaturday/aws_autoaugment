@@ -317,13 +317,13 @@ class AWSAugmentation(object):
             policy = random.choice(self.policies)
             pr = policy[2]            
             if random.random() > pr:
-                pass
-            else:
-                augment_fn1 = policy[0][0]
-                mag1 = policy[0][1]
-                augment_fn2 = policy[1][0]
-                mag2 = policy[1][1]
-                img = augment_fn1(img.copy(), mag1)
-                img = augment_fn2(img.copy(), mag2)  
-                break
+                continue
+
+            augment_fn1 = policy[0][0]
+            mag1 = policy[0][1]
+            augment_fn2 = policy[1][0]
+            mag2 = policy[1][1]
+            img = augment_fn1(img.copy(), mag1)
+            img = augment_fn2(img.copy(), mag2)  
+            break
         return img

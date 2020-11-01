@@ -125,7 +125,7 @@ class Controller(nn.Module):
         operations_str = []
         for actions in range(self.len_OPS):
             op1_idx = actions // 36
-            op2_idx = actions % 36 -1
+            op2_idx = actions % 36 
             transformations = augment_list()
             transformations_str = augment_list_by_name()
             prob = actions_p[0,actions].item()
