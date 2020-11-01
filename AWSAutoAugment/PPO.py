@@ -143,6 +143,8 @@ class Controller(nn.Module):
         actions_log_p = []
 
         for subpolicy in range(self.subpolicies):
+            input = torch.LongTensor([self.len_OPS]).to(self.device)
+            h_t, c_t = self.init_hidden()                
             h_t, c_t, logits = self.forward(input, h_t, c_t)
             action_index = actions_index[t].unsqueeze(0)
             t += 1
@@ -150,8 +152,6 @@ class Controller(nn.Module):
             log_p = F.log_softmax(logits, dim=-1)[0, action_index]
             actions_p.append(p)
             actions_log_p.append(log_p)
-            
-            input = action_index + self.len_OPS
 
         actions_p = torch.cat(actions_p)
         actions_log_p = torch.cat(actions_log_p)

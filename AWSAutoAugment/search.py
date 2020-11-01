@@ -183,13 +183,11 @@ def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, shared
 
 if __name__ == '__main__':
     args = parser.parse_args()
-    args.path = args.path+'/'+args.dataset+'/'+args.model+'/'    
-    args.weight_path = args.path + 'shared_weights/'
+    args.path = args.path+'/'+args.dataset+'/'+args.model+'/'
     args.policy_path = args.path+'/policy.txt'
+    
     if not os.path.isdir(args.path):
         os.makedirs(args.path)
-    if not os.path.isdir(args.weight_path):
-        os.makedirs(args.weight_path)   
         
     args.conf = {
         'type': args.model,
@@ -213,14 +211,14 @@ if __name__ == '__main__':
     shared_weights = get_model(args.conf, num_class(args.dataset))   
     if args.resume:
         logger.info('Loading pretrained shared weights')
-        checkpoint = torch.load(args.weight_path+'shared_weights.pth')
+        checkpoint = torch.load(args.path+'shared_weights.pth')
         shared_weights.load_state_dict(checkpoint['model_state_dict'])
     else:
         # stage 1 training to get aws
         shared_weights, result = train_and_eval(args, shared_weights, args.warmup_epochs, policy='uniform', test_ratio=0.2, cv_fold=0, shared=True)
         logger.info('[Stage 1 top1-valid: %3d', result['top1_valid'])
         logger.info('[Stage 1 top1-test: %3d', result['top1_test'])
-        torch.save({'model_state_dict':shared_weights.state_dict()}, args.weight_path+'shared_weights.pth')
+        torch.save({'model_state_dict':shared_weights.state_dict()}, args.path+'shared_weights.pth')
         
     #stage 2 policy update with PPO
     betas = (args.policy_adam_beta1, args.policy_adam_beta2)
@@ -240,18 +238,22 @@ if __name__ == '__main__':
         for i, subpolicy in enumerate(subpolicies_str):
             logger.info('# Sub-policy {}: {}'.format(i+1, subpolicy))
             print('# Sub-policy {}: {}'.format(i+1, subpolicy), file=policy_fp)            
-        policy_fp.close()
+
         result = train_and_eval(args, curr_weights, args.finetune_epochs, subpolicies , test_ratio=0.2, cv_fold=0)
         new_reward = result['top1_valid']
-        logger.info('[Stage 1 top1-valid: %3d', result['top1_valid'])
-        logger.info('[Stage 1 top1-test: %3d', result['top1_test'])            
+        logger.info('[Stage 2 top1-valid: %3d', result['top1_valid'])
+        logger.info('[Stage 2 top1-test: %3d', result['top1_test'])     
+        print('-----------------------------------', file=policy_fp)
+        print('[Stage 2 top1-valid: %3d', result['top1_valid'], file=policy_fp)
+        print('[Stage 2 top1-test: %3d', result['top1_test'], file=policy_fp)         
         if t == 0:
             reward = new_reward
         else:
             reward = args.reward_ema_decay * reward + (1- args.reward_ema_decay) * new_reward   
-        logger.info('Controller: Epoch %d / %d: new_reward: %d reward: %d' % (t+1, args.policy_steps,new_reward, reward))            
+        logger.info('Controller: Epoch %d / %d: new_reward: %d reward: %d' % (t+1, args.policy_steps,new_reward, reward))  
+        print('Controller: Epoch %d / %d: new_reward: %d reward: %d' % (t+1, args.policy_steps,new_reward, reward), file=policy_fp)          
         policy.update(actions_index, reward)
-        
+        policy_fp.close()        
     logger.info('Best policies found.')         
     for i, subpolicy in enumerate(subpolicies):
         logger.info('# Sub-policy %d' % (i+1))
