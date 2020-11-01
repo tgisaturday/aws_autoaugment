@@ -54,8 +54,8 @@ class PPO(object):
         self.optimizer = torch.optim.Adam(params=self.controller.parameters(), lr=self.lr, betas = self.betas)
         self.device = device
         
-    def update(self, actions_index, reward): 
-        actions_p, actions_log_p = self.controller.get_p(actions_index)        
+    def update(self,reward): 
+        actions_p, actions_log_p = self.controller.get_p()        
         loss = self.cal_loss(actions_p, actions_log_p, reward)
         self.optimizer.zero_grad()
         loss.backward()
@@ -109,65 +109,28 @@ class Controller(nn.Module):
         logits = self.op_decoder(h_t)
         return h_t, c_t, logits
     
-    def sample(self):
+
+    def get_p(self):
         input = torch.LongTensor([self.len_OPS]).to(self.device)
-        h_t, c_t = self.init_hidden()
-        actions_p = []
-        actions_log_p = []
-        actions_index = []
-
-        for subpolicy in range(self.subpolicies):
-            input = torch.LongTensor([self.len_OPS]).to(self.device)
-            h_t, c_t = self.init_hidden()            
-            h_t, c_t, logits = self.forward(input, h_t, c_t)
-            action_index = Categorical(logits=logits).sample()
-            
-            p = F.softmax(logits, dim=-1)[0,action_index]
-            log_p = F.log_softmax(logits, dim=-1)[0,action_index]
-            actions_p.append(p.detach())
-            actions_log_p.append(log_p.detach())
-            actions_index.append(action_index)
-
-        actions_p = torch.cat(actions_p)
-        actions_log_p = torch.cat(actions_log_p)
-        actions_index = torch.cat(actions_index)
-
-        return actions_p, actions_log_p, actions_index
-
-
-    def get_p(self, actions_index):
-        input = torch.LongTensor([self.len_OPS]).to(self.device)
-        h_t, c_t = self.init_hidden()
-        t = 0
-        actions_p = []
-        actions_log_p = []
-
-        for subpolicy in range(self.subpolicies):
-            input = torch.LongTensor([self.len_OPS]).to(self.device)
-            h_t, c_t = self.init_hidden()                
-            h_t, c_t, logits = self.forward(input, h_t, c_t)
-            action_index = actions_index[t].unsqueeze(0)
-            t += 1
-            p = F.softmax(logits, dim=-1)[0, action_index]
-            log_p = F.log_softmax(logits, dim=-1)[0, action_index]
-            actions_p.append(p)
-            actions_log_p.append(log_p)
-
-        actions_p = torch.cat(actions_p)
-        actions_log_p = torch.cat(actions_log_p)
+        h_t, c_t = self.init_hidden()            
+        h_t, c_t, logits = self.forward(input, h_t, c_t)
+        sigmoid_logits = F.sigmoid(logits)
+        actions_p = torch.div(sigmoid_logits,torch.sum(sigmoid_logits))
+        actions_log_p = torch.log(actions_p)
 
         return actions_p, actions_log_p
             
-    def convert(self, actions_index):
+    def convert(self, actions_p):
         operations = []
         operations_str = []
-        for actions in actions_index:
+        for actions in range(self.len_OPS):
             op1_idx = actions // 36
             op2_idx = actions % 36 -1
             transformations = augment_list()
             transformations_str = augment_list_by_name()
-            operations.append([transformations[op1_idx],transformations[op2_idx]])
-            operations_str.append([transformations_str[op1_idx],transformations_str[op2_idx]])            
+            prob = actions_p[0,actions].item()
+            operations.append([transformations[op1_idx],transformations[op2_idx], prob])
+            operations_str.append([transformations_str[op1_idx],transformations_str[op2_idx],prob])            
         return operations, operations_str
     
     def init_hidden(self):
