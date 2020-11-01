@@ -241,11 +241,11 @@ if __name__ == '__main__':
 
         result = train_and_eval(args, curr_weights, args.finetune_epochs, subpolicies , test_ratio=0.2, cv_fold=0)
         new_reward = result['top1_valid']
-        logger.info('[Stage 2 top1-valid: %3d', result['top1_valid'])
-        logger.info('[Stage 2 top1-test: %3d', result['top1_test'])     
+        logger.info('[Stage 2 top1-valid: %3d'%result['top1_valid'])
+        logger.info('[Stage 2 top1-test: %3d'%result['top1_test'])     
         print('-----------------------------------', file=policy_fp)
-        print('[Stage 2 top1-valid: %3d', result['top1_valid'], file=policy_fp)
-        print('[Stage 2 top1-test: %3d', result['top1_test'], file=policy_fp)         
+        print('[Stage 2 top1-valid: %3d'% result['top1_valid'], file=policy_fp)
+        print('[Stage 2 top1-test: %3d'% result['top1_test'], file=policy_fp)         
         if t == 0:
             reward = new_reward
         else:
@@ -254,7 +254,11 @@ if __name__ == '__main__':
         print('Controller: Epoch %d / %d: new_reward: %d reward: %d' % (t+1, args.policy_steps,new_reward, reward), file=policy_fp)          
         policy.update(actions_index, reward)
         policy_fp.close()        
-    logger.info('Best policies found.')         
-    for i, subpolicy in enumerate(subpolicies):
-        logger.info('# Sub-policy %d' % (i+1))
-        logger.info(subpolicy)
+    logger.info('Best policies found.')  
+    policy_fp = open(args.policy_path, 'a')
+    print('------- Best Policies Found -------', file=policy_fp)    
+    for i, subpolicy in enumerate(subpolicies_str):
+        logger.info('# Sub-policy {}: {}'.format(i+1, subpolicy))
+        print('# Sub-policy {}: {}'.format(i+1, subpolicy), file=policy_fp)        
+    policy_fp.close()
+    torch.save({'model_state_dict':controller.state_dict()}, args.path+'policy_controller.pth')        
