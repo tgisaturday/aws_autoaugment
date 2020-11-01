@@ -5,7 +5,7 @@ Unofficial [AWS AutoAugment](https://arxiv.org/abs/2009.14737 ) implementation i
 
 
 <p align="center">
-<img src="etc/method.png" height=350>
+<img src="./etc/method.PNG" height=350>
 </p>
 
 ## To-do
