@@ -122,7 +122,7 @@ def run_epoch( model, loader, loss_fn, optimizer, max_epoch, desc_default='', ep
             scheduler.step(epoch - 1 + float(steps) / total_steps)
 
         del preds, loss, top1, top5, data, label
-
+        break
     if optimizer:
         logger.info('[%s %03d/%03d] %s lr=%.6f', desc_default, epoch, max_epoch, metrics / cnt, optimizer.param_groups[0]['lr'])
     else:
@@ -184,7 +184,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     args.path = args.path+'/'+args.dataset+'/'+args.model+'/'
     args.policy_path = args.path+'/policy.txt'
-    
+    args.config_path = args.path+'/config.txt'
     if not os.path.isdir(args.path):
         os.makedirs(args.path)
         
@@ -211,17 +211,23 @@ if __name__ == '__main__':
     if args.resume:
         logger.info('Loading pretrained shared weights')
         checkpoint = torch.load(args.path+'shared_weights.pth')
-        shared_weights.load_state_dict(checkpoint['model_state_dict'])
+        shared_weights.load_state_dict(checkpoint['model_state_dict'])  
+        fp = open(args.config_path, 'r')        
+        baseline = float(fp.readline())
     else:
         # stage 1 training to get aws
         shared_weights, result = train_and_eval(args, shared_weights, args.warmup_epochs, policy='uniform', test_ratio=0.2, cv_fold=0, shared=True)
         logger.info('[Stage 1 top1-valid: %3f', result['top1_valid'])
         logger.info('[Stage 1 top1-test: %3f', result['top1_test'])
         torch.save({'model_state_dict':shared_weights.state_dict()}, args.path+'shared_weights.pth')
-        
+        fp = open(args.config_path, 'w')
+        baseline = result['top1_valid']   
+        fp.write(str(baseline))
+        fp.close()
+
     #stage 2 policy update with PPO
     betas = (args.policy_adam_beta1, args.policy_adam_beta2)
-    
+
     policy = PPO(args.policy_lr, betas, args.policy_clip_epsilon, 
                             args.policy_entropy_weight,args.policy_embedding_size, 
                             args.policy_hidden_size, args.policy_subpolices,device)
@@ -240,12 +246,15 @@ if __name__ == '__main__':
             print('# Sub-policy {0}: {1}, {2} {3:06f}'.format(i+1, subpolicy[0],subpolicy[1],subpolicy[2]), file=policy_fp)            
 
         result = train_and_eval(args, curr_weights, args.finetune_epochs, subpolicies , test_ratio=0.2, cv_fold=0)
-        new_reward = result['top1_valid']
-        logger.info('[Stage 2 top1-valid: %3f'%result['top1_valid'])
+        
+        new_reward = result['top1_valid'] - baseline
+        
+        logger.info('[Stage 2 top1-valid: %3f baseline: %3f'%(result['top1_valid'],baseline))
         logger.info('[Stage 2 top1-test: %3f'%result['top1_test'])     
         print('-----------------------------------', file=policy_fp)
-        print('[Stage 2 top1-valid: %3f'% result['top1_valid'], file=policy_fp)
-        print('[Stage 2 top1-test: %3f'% result['top1_test'], file=policy_fp)         
+        print('[Stage 2 top1-valid: %3f baseline: %3f'%(result['top1_valid'],baseline), file=policy_fp)
+        print('[Stage 2 top1-test: %3f'% result['top1_test'], file=policy_fp)    
+        
         if t == 0:
             reward = new_reward
         else:

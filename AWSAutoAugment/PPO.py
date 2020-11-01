@@ -12,40 +12,10 @@ from augmentations import augment_list, augment_list_by_name
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-class Operation:
-    def __init__(self, types_softmax, probs_softmax, argmax=False):
-        # Ekin Dogus says he sampled the softmaxes, and has not used argmax
-        # We might still want to use argmax=True for the last predictions, to ensure
-        # the best solutions are chosen and make it deterministic.
-
-        self.type = types_softmax.argmax()
-        self.transformation = transformations[self.type]
-        self.prob = probs_softmax.argmax() / (OP_PROBS-1)
-        self.magnitude = m*(t[2]-t[1]) + t[1]
-
-    def __str__(self):
-        return 'Operation %2d (P=%.3f)' % (self.type, self.prob)
-
-class Subpolicy:
-    def __init__(self, *operations):
-        self.operations = operations
-
-    def __call__(self, X):
-        for op in self.operations:
-            X = op(X)
-        return X
-
-    def __str__(self):
-        ret = ''
-        for i, op in enumerate(self.operations):
-            ret += str(op)
-            if i < len(self.operations)-1:
-                ret += '\n'
-        return ret    
     
 
 class PPO(object):
-    def __init__(self, lr, betas, clip_epsilon, entropy_weight,embedding_size, hidden_size, subpolicies ,device):
+    def __init__(self, lr, betas, clip_epsilon, entropy_weight,embedding_size, hidden_size, subpolicies, device):
         self.lr = lr
         self.betas = betas
         self.clip_epsilon = clip_epsilon
@@ -53,7 +23,7 @@ class PPO(object):
         self.controller = Controller(embedding_size, hidden_size, subpolicies ,device).to(device)
         self.optimizer = torch.optim.Adam(params=self.controller.parameters(), lr=self.lr, betas = self.betas)
         self.device = device
-        
+
     def update(self,reward): 
         actions_p, actions_log_p = self.controller.get_p()        
         loss = self.cal_loss(actions_p, actions_log_p, reward)
@@ -94,29 +64,25 @@ class Controller(nn.Module):
         self.len_OPS = 36 * 36 #number of operation candidates
         self.device = device       
         self.embedding = nn.Embedding(self.len_OPS, self.embedding_size)    
+        self.policy = nn.Sequential(
+                                    nn.Linear(self.embedding_size, self.hidden_size),
+                                    nn.Tanh(),
+                                    nn.Linear(self.hidden_size, self.hidden_size),
+                                    nn.Tanh(),
+                                    nn.Linear(self.hidden_size,1)) 
         
-        #operation 
-        self.rnn = nn.LSTMCell(self.embedding_size, hidden_size)
-        self.op_decoder = nn.Linear(hidden_size,1)
-        
-
-        self.init_parameters()
-        
-    def forward(self, input, h_t, c_t):
+    def forward(self, input):
         input = self.embedding(input)
-        h_t, c_t = self.rnn(input, (h_t, c_t))
-        logits = self.op_decoder(h_t)
-        return h_t, c_t, logits
-    
+        logits = self.policy(input)
+        return logits
 
     def get_p(self):
         actions_p = []
         actions_log_p = []
-        h_t, c_t = self.init_hidden()            
         for i in range(self.len_OPS):
             input = torch.LongTensor([i]).to(self.device)
-            h_t, c_t, logits = self.forward(input, h_t, c_t)
-            p = torch.sigmoid(logits)
+            logit = self.forward(input)
+            p = torch.sigmoid(logit)
             log_p = torch.log(p)
             actions_p.append(p)
             actions_log_p.append(log_p)
@@ -138,17 +104,7 @@ class Controller(nn.Module):
             operations_str.append([transformations_str[op1_idx],transformations_str[op2_idx],prob])            
         return operations, operations_str
     
-    def init_hidden(self):
-        h_t = torch.zeros(1, self.hidden_size, dtype=torch.float, device=self.device)
-        c_t = torch.zeros(1, self.hidden_size, dtype=torch.float, device=self.device)
-
-        return (h_t, c_t)    
     
-    def init_parameters(self):
-        init_range = 0.1
-        for param in self.parameters():
-            param.data.uniform_(-init_range, init_range)         
-        self.op_decoder.bias.data.fill_(0)
 
 
         

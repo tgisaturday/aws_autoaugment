@@ -101,11 +101,9 @@ def get_dataloaders(args, policy='uniform', split=0.15, split_idx=0):
 
     train_sampler = None
     if split > 0.0:
-        sss = StratifiedShuffleSplit(n_splits=5, test_size=split, random_state=0)
-        sss = sss.split(list(range(len(total_trainset))), total_trainset.targets)
-        for _ in range(split_idx + 1):
-            train_idx, valid_idx = next(sss)
-
+        total_idx = list(range(len(total_trainset)))
+        train_idx = total_idx[:int(len(total_trainset)*(1-split))]
+        valid_idx = total_idx[int(len(total_trainset)*(1-split)):]                 
         train_sampler = SubsetRandomSampler(train_idx)
         valid_sampler = SubsetSampler(valid_idx)
     else:
