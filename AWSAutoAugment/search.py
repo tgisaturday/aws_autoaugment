@@ -199,36 +199,38 @@ if __name__ == '__main__':
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  
         cudnn.benchmark = True
         cudnn.enable = True
-        logger.info('using gpu : {}'.format(args.gpu))
         torch.cuda.manual_seed(args.manual_seed)
     else:
         device = torch.device('cpu')
-        logger.info('using cpu')    
         
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
     os.makedirs(args.path, exist_ok=True)
-    shared_weights = get_model(args.conf, num_class(args.dataset))   
+    shared_weights = get_model(args.conf, num_class(args.dataset))
+    
+    betas = (args.policy_adam_beta1, args.policy_adam_beta2)    
+    policy = PPO(args.policy_lr, betas, args.policy_clip_epsilon, 
+                            args.policy_entropy_weight,args.policy_embedding_size, 
+                            args.policy_hidden_size, args.baseline_ema_weight, device)
+    controller = policy.controller    
+    
+    #uniform sampling for shared policy
+    actions_p = torch.FloatTensor([1/(36*36) for i in range(36*36)])
+    subpolicies, subpolicies_str, subpolicies_probs  = controller.convert(actions_p)
+    
     if args.resume:
         logger.info('Loading pretrained shared weights')
         checkpoint = torch.load(args.path+'shared_weights.pth')
         shared_weights.load_state_dict(checkpoint['model_state_dict'])  
 
     else:
-        # stage 1 training to get aws
-        shared_weights, result = train_and_eval(args, shared_weights, args.warmup_epochs, policy='uniform', test_ratio=0.2, cv_fold=0, shared=True)
+        # stage 1 training to get aws with uniform sampling
+        shared_weights, result = train_and_eval(args, shared_weights, args.warmup_epochs, (subpolicies_probs,subpolicies), test_ratio=0.2, cv_fold=0, shared=True)
         logger.info('[Stage 1 top1-valid: %3f', result['top1_valid'])
         logger.info('[Stage 1 top1-test: %3f', result['top1_test'])
         torch.save({'model_state_dict':shared_weights.state_dict()}, args.path+'shared_weights.pth')
 
 
     #stage 2 policy update with PPO
-    betas = (args.policy_adam_beta1, args.policy_adam_beta2)
-
-    policy = PPO(args.policy_lr, betas, args.policy_clip_epsilon, 
-                            args.policy_entropy_weight,args.policy_embedding_size, 
-                            args.policy_hidden_size, args.baseline_ema_weight, device)
-    controller = policy.controller
-
     for t in range(args.policy_steps):
         curr_weights = copy.deepcopy(shared_weights)
         policy_fp = open(args.policy_path, 'a')
@@ -236,14 +238,13 @@ if __name__ == '__main__':
         print('-----Controller: Epoch %d / %d-----' % (t+1, args.policy_steps), file=policy_fp)
         
         actions_p, actions_log_p = controller.get_p()
-        subpolicies, subpolicies_str  = controller.convert(actions_p)
+        subpolicies, subpolicies_str, subpolicies_probs  = controller.convert(actions_p)
         subpolicies_str.sort(key = lambda subpolices_str: subpolices_str[2], reverse=True)
         for i, subpolicy in enumerate(subpolicies_str[:args.policy_subpolices]):
             logger.info('# Sub-policy {0}: {1}, {2} {3:06f}'.format(i+1, subpolicy[0],subpolicy[1],subpolicy[2]))
             print('# Sub-policy {0}: {1}, {2} {3:06f}'.format(i+1, subpolicy[0],subpolicy[1],subpolicy[2]), file=policy_fp)            
 
-
-        result = train_and_eval(args, curr_weights, args.finetune_epochs,(actions_p.tolist()[0],subpolicies), test_ratio=0.2, cv_fold=0)
+        result = train_and_eval(args, curr_weights, args.finetune_epochs,(subpolicies_probs,subpolicies), test_ratio=0.2, cv_fold=0)
        
         new_acc = result['top1_valid']
         
@@ -264,7 +265,7 @@ if __name__ == '__main__':
     result_fp = open(args.result_path, 'w')    
     print('------- Best Policies Found -------', file=policy_fp)
     actions_p, actions_log_p = controller.get_p()    
-    subpolicies, subpolicies_str  = controller.convert(actions_p)    
+    subpolicies, subpolicies_str, subpolicies_probs  = controller.convert(actions_p)    
     subpolicies_str.sort(key = lambda subpolices_str: subpolices_str[2], reverse=True)
     for i, subpolicy in enumerate(subpolicies_str):
         logger.info('# Sub-policy {0}: {1}, {2} {3:06f}'.format(i+1,  subpolicy[0],subpolicy[1],subpolicy[2]))

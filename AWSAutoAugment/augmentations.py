@@ -299,15 +299,6 @@ class Augmentation(object):
                 img = apply_augment(img, name, level)
         return img
 
-class UniformAugmentation(object):
-    def __init__(self):
-        self.aug_list = augment_list()
-
-    def __call__(self, img):
-        augment_fn, low, high = random.choice(self.aug_list)
-        img = augment_fn(img.copy(), high)
-        return img
-    
 class AWSAugmentation(object):
     def __init__(self, policy):
         self.policy_p = policy[0]

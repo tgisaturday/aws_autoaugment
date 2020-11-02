@@ -77,7 +77,7 @@ class Controller(nn.Module):
                                     nn.Tanh(),
                                     nn.Linear(self.hidden_size, self.hidden_size),
                                     nn.Tanh(),
-                                    nn.Linear(self.hidden_size,self.len_OPS)) 
+                                    nn.Linear(self.hidden_size,1)) 
 
     def forward(self, input):
         input = self.embedding(input)
@@ -102,16 +102,18 @@ class Controller(nn.Module):
     
     def convert(self, actions_p):
         operations = []
+        probs = []
         operations_str = []
         for actions in range(self.len_OPS):
             op1_idx = actions // 36
             op2_idx = actions % 36 
             transformations = augment_list()
             transformations_str = augment_list_by_name()
-            prob = actions_p[0,actions].item()
+            prob = actions_p[actions].item()
+            probs.append(prob)
             operations.append([transformations[op1_idx],transformations[op2_idx], prob])
             operations_str.append([transformations_str[op1_idx],transformations_str[op2_idx],prob])            
-        return operations, operations_str
+        return operations, operations_str, probs
        
 
         
