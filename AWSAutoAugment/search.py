@@ -211,18 +211,14 @@ if __name__ == '__main__':
         logger.info('Loading pretrained shared weights')
         checkpoint = torch.load(args.path+'shared_weights.pth')
         shared_weights.load_state_dict(checkpoint['model_state_dict'])  
-        fp = open(args.config_path, 'r')        
-        baseline = float(fp.readline())
+
     else:
         # stage 1 training to get aws
         shared_weights, result = train_and_eval(args, shared_weights, args.warmup_epochs, policy='uniform', test_ratio=0.2, cv_fold=0, shared=True)
         logger.info('[Stage 1 top1-valid: %3f', result['top1_valid'])
         logger.info('[Stage 1 top1-test: %3f', result['top1_test'])
         torch.save({'model_state_dict':shared_weights.state_dict()}, args.path+'shared_weights.pth')
-        fp = open(args.config_path, 'w')
-        baseline = result['top1_valid']   
-        fp.write(str(baseline))
-        fp.close()
+
 
     #stage 2 policy update with PPO
     betas = (args.policy_adam_beta1, args.policy_adam_beta2)
@@ -246,21 +242,25 @@ if __name__ == '__main__':
 
         result = train_and_eval(args, curr_weights, args.finetune_epochs, subpolicies , test_ratio=0.2, cv_fold=0)
         
-        new_reward = result['top1_valid'] - baseline
+        new_reward = result['top1_valid']
+   
+
         
+        if t == 0:
+            reward = 0
+            baseline = new_reward
+        else:
+            reward = new_reward - baseline        
+            policy.update(reward)
+            baseline = args.reward_ema_decay * baseline + (1- args.reward_ema_decay) * new_reward  
+            
         logger.info('[Stage 2 top1-valid: %3f baseline: %3f'%(result['top1_valid'],baseline))
         logger.info('[Stage 2 top1-test: %3f'%result['top1_test'])     
         print('-----------------------------------', file=policy_fp)
         print('[Stage 2 top1-valid: %3f baseline: %3f'%(result['top1_valid'],baseline), file=policy_fp)
-        print('[Stage 2 top1-test: %3f'% result['top1_test'], file=policy_fp)    
-        
-        if t == 0:
-            reward = new_reward
-        else:
-            reward = args.reward_ema_decay * reward + (1- args.reward_ema_decay) * new_reward   
+        print('[Stage 2 top1-test: %3f'% result['top1_test'], file=policy_fp)            
         logger.info('Controller: Epoch %d / %d: new_reward: %3f reward: %3f' % (t+1, args.policy_steps,new_reward, reward))  
-        print('Controller: Epoch %d / %d: new_reward: %3f reward: %3f' % (t+1, args.policy_steps,new_reward, reward), file=policy_fp)          
-        policy.update(reward)
+        print('Controller: Epoch %d / %d: new_reward: %3f reward: %3f' % (t+1, args.policy_steps,new_reward, reward), file=policy_fp)              
         policy_fp.close()        
     logger.info('Best policies found.')  
     policy_fp = open(args.policy_path, 'a')
