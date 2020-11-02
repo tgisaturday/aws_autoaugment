@@ -27,16 +27,17 @@ class PPO(object):
         self.baseline_weight = baseline_weight
         
     def update(self,acc): 
-        actions_p, actions_log_p = self.controller.get_p()    
+        actions_p, actions_log_p = self.controller.get_p()          
         if self.baseline == None:
-            self.baseline = acc
+            self.baseline = acc            
+        
         else:
-            self.baseline = self.baseline * self.baseline_weight + acc* (1 - self.baseline_weight)        
-            
-        loss = self.cal_loss(actions_p, actions_log_p, acc)
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
+            loss = self.cal_loss(actions_p, actions_log_p, acc)
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()            
+            #update baseline for next step
+            self.baseline = self.baseline * self.baseline_weight + acc* (1 - self.baseline_weight)          
        
     
     def clip(self, actions_importance):
@@ -51,7 +52,7 @@ class PPO(object):
     def cal_loss(self, actions_p, actions_log_p, acc):
         actions_importance = actions_p
         clipped_actions_importance = self.clip(actions_importance)
-        reward = acc - baseline
+        reward = acc - self.baseline
         actions_reward = actions_importance * reward
         clipped_actions_reward = clipped_actions_importance * reward
 

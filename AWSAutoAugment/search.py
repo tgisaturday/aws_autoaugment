@@ -124,6 +124,7 @@ def run_epoch( model, loader, loss_fn, optimizer, max_epoch, desc_default='', ep
             scheduler.step(epoch - 1 + float(steps) / total_steps)
 
         del preds, loss, top1, top5, data, label
+
     if optimizer:
         logger.info('[%s %03d/%03d] %s lr=%.6f', desc_default, epoch, max_epoch, metrics / cnt, optimizer.param_groups[0]['lr'])
     else:
@@ -184,8 +185,8 @@ def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, shared
 if __name__ == '__main__':
     args = parser.parse_args()
     args.path = args.path+'/'+args.dataset+'/'+args.model+'/'
-    args.policy_path = args.path+'/policy.txt'
-    args.config_path = args.path+'/config.txt'
+    args.policy_path = args.path+'/policy_logs.txt'
+    args.result_path = args.path+'/policy_found.txt'
     if not os.path.isdir(args.path):
         os.makedirs(args.path)
         
@@ -245,25 +246,30 @@ if __name__ == '__main__':
         result = train_and_eval(args, curr_weights, args.finetune_epochs, subpolicies , test_ratio=0.2, cv_fold=0)
         
         new_acc = result['top1_valid']
-        policy.update(new_acc)
-
-            
-        logger.info('[Stage 2 top1-valid: %3f baseline: %3f'%(result['top1_valid'],policy.baseline))
-        logger.info('[Stage 2 top1-test: %3f'%result['top1_test'])     
+        
+        logger.info('-----------------------------------')
         print('-----------------------------------', file=policy_fp)
-        print('[Stage 2 top1-valid: %3f baseline: %3f'%(result['top1_valid'],policy.baseline), file=policy_fp)
-        print('[Stage 2 top1-test: %3f'% result['top1_test'], file=policy_fp)            
-        logger.info('Controller: Epoch %d / %d: new_reward: %3f reward: %3f' % (t+1, args.policy_steps,new_reward, reward))  
-        print('Controller: Epoch %d / %d: new_reward: %3f reward: %3f' % (t+1, args.policy_steps,new_reward, reward), file=policy_fp)              
-        policy_fp.close()        
+        if policy.baseline == None:
+            logger.info('Controller: Epoch %d / %d: new_acc: %3f baseline: None' % (t+1, args.policy_steps,new_acc))  
+            print('Controller: Epoch %d / %d: new_acc: %3f baseline: None' % (t+1, args.policy_steps,new_acc), file=policy_fp)               
+        else:
+            baseline = policy.baseline           
+            logger.info('Controller: Epoch %d / %d: new_acc: %3f baseline: %3f' % (t+1, args.policy_steps,new_acc, baseline))  
+            print('Controller: Epoch %d / %d: new_acc: %3f baseline: %3f' % (t+1, args.policy_steps,new_acc, baseline), file=policy_fp)       
+        policy.update(new_acc)
+        policy_fp.close()     
+        
     logger.info('Best policies found.')  
     policy_fp = open(args.policy_path, 'a')
+    result_fp = open(args.result_path, 'w')    
     print('------- Best Policies Found -------', file=policy_fp)
     actions_p, actions_log_p = controller.get_p()    
     subpolicies, subpolicies_str  = controller.convert(actions_p)    
     subpolicies_str.sort(key = lambda subpolices_str: subpolices_str[2], reverse=True)
     for i, subpolicy in enumerate(subpolicies_str):
         logger.info('# Sub-policy {0}: {1}, {2} {3:06f}'.format(i+1,  subpolicy[0],subpolicy[1],subpolicy[2]))
-        print('# Sub-policy {0}: {1}, {2} {3:06f}'.format(i+1,  subpolicy[0],subpolicy[1],subpolicy[2]), file=policy_fp)              
+        print('# Sub-policy {0}: {1}, {2} {3:06f}'.format(i+1,  subpolicy[0],subpolicy[1],subpolicy[2]), file=policy_fp)   
+        print('({}, {}, {})'.format(subpolicy[0],subpolicy[1], subpolicy[2]), file=result_fp)         
     policy_fp.close()
+    result_fp.close()
     torch.save({'model_state_dict':controller.state_dict()}, args.path+'policy_controller.pth')        
