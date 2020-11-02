@@ -78,9 +78,7 @@ class Controller(nn.Module):
                                     nn.Linear(self.hidden_size, self.hidden_size),
                                     nn.Tanh(),
                                     nn.Linear(self.hidden_size,self.len_OPS)) 
-        self.actions_p = None
-        self.actions_log_p = None
-      
+
     def forward(self, input):
         input = self.embedding(input)
         logits = self.policy(input)
@@ -98,8 +96,6 @@ class Controller(nn.Module):
         actions_p = torch.cat(actions_p)
         actions_p = torch.div(actions_p, torch.sum(actions_p))
         actions_log_p = torch.log(actions_p)
-        self.actions_p = actions_p
-        self.actions_log_p = actions_log_p
         
         return actions_p, actions_log_p
     
