@@ -26,7 +26,7 @@ class PPO(object):
         self.baseline = None
         self.baseline_weight = baseline_weight
         
-    def update(self,acc): 
+    def update(self, acc): 
         actions_p, actions_log_p = self.controller.get_p()          
         if self.baseline == None:
             self.baseline = acc            
@@ -77,28 +77,33 @@ class Controller(nn.Module):
                                     nn.Tanh(),
                                     nn.Linear(self.hidden_size, self.hidden_size),
                                     nn.Tanh(),
-                                    nn.Linear(self.hidden_size,1)) 
-        
+                                    nn.Linear(self.hidden_size,self.len_OPS)) 
+        self.actions_p = None
+        self.actions_log_p = None
+      
     def forward(self, input):
         input = self.embedding(input)
         logits = self.policy(input)
         return logits
-
+    
     def get_p(self):
         actions_p = []
         actions_log_p = []
+        
         for i in range(self.len_OPS):
             input = torch.LongTensor([i]).to(self.device)
-            logit = self.forward(input)
-            p = torch.sigmoid(logit)
-            log_p = torch.log(p)
+            logits = self.forward(input)
+            p = torch.sigmoid(logits)
             actions_p.append(p)
-            actions_log_p.append(log_p)
         actions_p = torch.cat(actions_p)
-        actions_log_p = torch.cat(actions_log_p)
-
+        actions_p = torch.div(actions_p, torch.sum(actions_p))
+        actions_log_p = torch.log(actions_p)
+        self.actions_p = actions_p
+        self.actions_log_p = actions_log_p
+        
         return actions_p, actions_log_p
-            
+    
+    
     def convert(self, actions_p):
         operations = []
         operations_str = []
@@ -107,12 +112,10 @@ class Controller(nn.Module):
             op2_idx = actions % 36 
             transformations = augment_list()
             transformations_str = augment_list_by_name()
-            prob = actions_p[actions].item()
+            prob = actions_p[0,actions].item()
             operations.append([transformations[op1_idx],transformations[op2_idx], prob])
             operations_str.append([transformations_str[op1_idx],transformations_str[op2_idx],prob])            
         return operations, operations_str
-    
-    
-
+       
 
         

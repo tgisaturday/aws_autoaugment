@@ -88,8 +88,6 @@ parser.add_argument('--policy_embedding_size', type=int, default=32)
 parser.add_argument('--policy_hidden_size', type=int, default=100)
 parser.add_argument('--policy_subpolices', type=int, default=25) # number of subpolicies to print
 
-logger = get_logger('AWSAugment')
-
 
         
 def run_epoch( model, loader, loss_fn, optimizer, max_epoch, desc_default='', epoch=0,  scheduler=None):
@@ -201,11 +199,11 @@ if __name__ == '__main__':
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  
         cudnn.benchmark = True
         cudnn.enable = True
-        logging.info('using gpu : {}'.format(args.gpu))
+        logger.info('using gpu : {}'.format(args.gpu))
         torch.cuda.manual_seed(args.manual_seed)
     else:
         device = torch.device('cpu')
-        logging.info('using cpu')    
+        logger.info('using cpu')    
         
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
     os.makedirs(args.path, exist_ok=True)
@@ -236,6 +234,7 @@ if __name__ == '__main__':
         policy_fp = open(args.policy_path, 'a')
         logger.info('Controller: Epoch %d / %d' % (t+1, args.policy_steps))
         print('-----Controller: Epoch %d / %d-----' % (t+1, args.policy_steps), file=policy_fp)
+        
         actions_p, actions_log_p = controller.get_p()
         subpolicies, subpolicies_str  = controller.convert(actions_p)
         subpolicies_str.sort(key = lambda subpolices_str: subpolices_str[2], reverse=True)
@@ -243,8 +242,9 @@ if __name__ == '__main__':
             logger.info('# Sub-policy {0}: {1}, {2} {3:06f}'.format(i+1, subpolicy[0],subpolicy[1],subpolicy[2]))
             print('# Sub-policy {0}: {1}, {2} {3:06f}'.format(i+1, subpolicy[0],subpolicy[1],subpolicy[2]), file=policy_fp)            
 
-        result = train_and_eval(args, curr_weights, args.finetune_epochs, subpolicies , test_ratio=0.2, cv_fold=0)
-        
+
+        result = train_and_eval(args, curr_weights, args.finetune_epochs,(actions_p.tolist()[0],subpolicies), test_ratio=0.2, cv_fold=0)
+       
         new_acc = result['top1_valid']
         
         logger.info('-----------------------------------')

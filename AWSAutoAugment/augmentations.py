@@ -309,21 +309,17 @@ class UniformAugmentation(object):
         return img
     
 class AWSAugmentation(object):
-    def __init__(self, policies):
-        self.policies = policies
-
+    def __init__(self, policy):
+        self.policy_p = policy[0]
+        self.policies = policy[1]
     def __call__(self, img):
-        while True:
-            policy = random.choice(self.policies)
-            pr = policy[2]            
-            if random.random() > pr:
-                continue
-
-            augment_fn1 = policy[0][0]
-            mag1 = policy[0][1]
-            augment_fn2 = policy[1][0]
-            mag2 = policy[1][1]
-            img = augment_fn1(img.copy(), mag1)
-            img = augment_fn2(img.copy(), mag2)  
-            break
+        policy_p = self.policy_p
+        action_index = np.random.multinomial(1, policy_p)
+        policy = self.policies[action_index[0]]
+        augment_fn1 = policy[0][0]
+        mag1 = policy[0][1]
+        augment_fn2 = policy[1][0]
+        mag2 = policy[1][1]
+        img = augment_fn1(img.copy(), mag1)
+        img = augment_fn2(img.copy(), mag2)  
         return img
