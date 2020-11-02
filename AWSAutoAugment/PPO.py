@@ -15,18 +15,25 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     
 
 class PPO(object):
-    def __init__(self, lr, betas, clip_epsilon, entropy_weight,embedding_size, hidden_size, subpolicies, device):
+    def __init__(self, lr, betas, clip_epsilon, entropy_weight,embedding_size, hidden_size, baseline_weight, device):
         self.lr = lr
         self.betas = betas
         self.clip_epsilon = clip_epsilon
         self.entropy_weight = entropy_weight    
-        self.controller = Controller(embedding_size, hidden_size, subpolicies ,device).to(device)
+        self.controller = Controller(embedding_size, hidden_size, device).to(device)
         self.optimizer = torch.optim.Adam(params=self.controller.parameters(), lr=self.lr, betas = self.betas)
         self.device = device
-
-    def update(self,reward): 
-        actions_p, actions_log_p = self.controller.get_p()        
-        loss = self.cal_loss(actions_p, actions_log_p, reward)
+        self.baseline = None
+        self.baseline_weight = baseline_weight
+        
+    def update(self,acc): 
+        actions_p, actions_log_p = self.controller.get_p()    
+        if self.baseline == None:
+            self.baseline = acc
+        else:
+            self.baseline = self.baseline * self.baseline_weight + acc* (1 - self.baseline_weight)        
+            
+        loss = self.cal_loss(actions_p, actions_log_p, acc)
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
@@ -41,9 +48,10 @@ class PPO(object):
 
         return actions_importance   
     
-    def cal_loss(self, actions_p, actions_log_p, reward):
+    def cal_loss(self, actions_p, actions_log_p, acc):
         actions_importance = actions_p
         clipped_actions_importance = self.clip(actions_importance)
+        reward = acc - baseline
         actions_reward = actions_importance * reward
         clipped_actions_reward = clipped_actions_importance * reward
 
@@ -56,11 +64,10 @@ class PPO(object):
     
         
 class Controller(nn.Module):
-    def __init__(self, embedding_size, hidden_size, subpolicies ,device):
+    def __init__(self, embedding_size, hidden_size, device):
         super(Controller, self).__init__()        
         self.embedding_size = embedding_size
         self.hidden_size = hidden_size
-        self.subpolicies = subpolicies
         self.len_OPS = 36 * 36 #number of operation candidates
         self.device = device       
         self.embedding = nn.Embedding(self.len_OPS, self.embedding_size)    

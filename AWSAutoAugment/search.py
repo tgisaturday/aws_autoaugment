@@ -67,24 +67,26 @@ parser.add_argument('--policy_algo', type=str, default='rl', choices=['rl'])
 parser.add_argument('--warmup_epochs', type=int, default=200)
 parser.add_argument('--finetune_epochs', type=int, default=10)
 parser.add_argument('--policy_steps', type=int, default=800)
-parser.add_argument('--reward_ema_decay', type=float, default=0.9)
 
 """ policy hyper-parameters """
 parser.add_argument('--policy_init_type', type=str, default='uniform', choices=['normal', 'uniform'])
 parser.add_argument('--policy_opt_type', type=str, default='adam', choices=['adam'])
 parser.add_argument('--policy_batch_size', type=int, default=5)
 parser.add_argument('--policy_lr', type=float, default=0.1)
+
 parser.add_argument('--policy_adam_beta1', type=float, default=0.5)  # arch_opt_param
 parser.add_argument('--policy_adam_beta2', type=float, default=0.999)  # arch_opt_param
 parser.add_argument('--policy_adam_eps', type=float, default=1e-8)  # arch_opt_param
-parser.add_argument('--policy_weight_decay', type=float, default=0)
+parser.add_argument('--policy_adam_weight_decay', type=float, default=0)
+
 parser.add_argument('--policy_clip_epsilon', type=float, default=0.2)
 parser.add_argument('--policy_entropy_weight', type=float, default=1e-5)
+parser.add_argument('--baseline_ema_weight', type=float, default=0.9)
 
 """ controller hyper-parameters """
 parser.add_argument('--policy_embedding_size', type=int, default=32)
 parser.add_argument('--policy_hidden_size', type=int, default=100)
-parser.add_argument('--policy_subpolices', type=int, default=25) # number of subpolicies
+parser.add_argument('--policy_subpolices', type=int, default=25) # number of subpolicies to print
 
 logger = get_logger('AWSAugment')
 
@@ -225,7 +227,7 @@ if __name__ == '__main__':
 
     policy = PPO(args.policy_lr, betas, args.policy_clip_epsilon, 
                             args.policy_entropy_weight,args.policy_embedding_size, 
-                            args.policy_hidden_size, args.policy_subpolices,device)
+                            args.policy_hidden_size, args.baseline_ema_weight, device)
     controller = policy.controller
 
     for t in range(args.policy_steps):
@@ -242,22 +244,14 @@ if __name__ == '__main__':
 
         result = train_and_eval(args, curr_weights, args.finetune_epochs, subpolicies , test_ratio=0.2, cv_fold=0)
         
-        new_reward = result['top1_valid']
-   
+        new_acc = result['top1_valid']
+        policy.update(new_acc)
 
-        
-        if t == 0:
-            reward = 0
-            baseline = new_reward
-        else:
-            reward = new_reward - baseline        
-            policy.update(reward)
-            baseline = args.reward_ema_decay * baseline + (1- args.reward_ema_decay) * new_reward  
             
-        logger.info('[Stage 2 top1-valid: %3f baseline: %3f'%(result['top1_valid'],baseline))
+        logger.info('[Stage 2 top1-valid: %3f baseline: %3f'%(result['top1_valid'],policy.baseline))
         logger.info('[Stage 2 top1-test: %3f'%result['top1_test'])     
         print('-----------------------------------', file=policy_fp)
-        print('[Stage 2 top1-valid: %3f baseline: %3f'%(result['top1_valid'],baseline), file=policy_fp)
+        print('[Stage 2 top1-valid: %3f baseline: %3f'%(result['top1_valid'],policy.baseline), file=policy_fp)
         print('[Stage 2 top1-test: %3f'% result['top1_test'], file=policy_fp)            
         logger.info('Controller: Epoch %d / %d: new_reward: %3f reward: %3f' % (t+1, args.policy_steps,new_reward, reward))  
         print('Controller: Epoch %d / %d: new_reward: %3f reward: %3f' % (t+1, args.policy_steps,new_reward, reward), file=policy_fp)              
