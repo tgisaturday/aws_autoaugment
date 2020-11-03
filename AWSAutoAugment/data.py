@@ -69,8 +69,7 @@ def get_dataloaders(args, policy='uniform', split=0.15, split_idx=0):
 
     
     #apply current policy
-    transform_train.transforms.insert(0, AWSAugmentation(policy))
-
+    transform_train.transforms.insert(-2, AWSAugmentation(policy))
  
         
     if args.cutout > 0:

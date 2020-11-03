@@ -122,7 +122,7 @@ def run_epoch( model, loader, loss_fn, optimizer, max_epoch, desc_default='', ep
             scheduler.step(epoch - 1 + float(steps) / total_steps)
 
         del preds, loss, top1, top5, data, label
-
+        break
     if optimizer:
         logger.info('[%s %03d/%03d] %s lr=%.6f', desc_default, epoch, max_epoch, metrics / cnt, optimizer.param_groups[0]['lr'])
     else:

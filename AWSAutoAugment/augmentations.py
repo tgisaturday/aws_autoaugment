@@ -305,8 +305,8 @@ class AWSAugmentation(object):
         self.policies = policy[1]
     def __call__(self, img):
         policy_p = self.policy_p
-        action_index = np.random.multinomial(1, policy_p)
-        policy = self.policies[action_index[0]]
+        action_index = np.argmax(np.random.multinomial(1, policy_p))
+        policy = self.policies[action_index]
         augment_fn1 = policy[0][0]
         mag1 = policy[0][1]
         augment_fn2 = policy[1][0]
