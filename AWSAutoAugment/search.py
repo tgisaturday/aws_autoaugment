@@ -90,7 +90,7 @@ parser.add_argument('--policy_subpolices', type=int, default=25) # number of sub
 
 
         
-def run_epoch( model, loader, loss_fn, optimizer, max_epoch, desc_default='', epoch=0,  scheduler=None):
+def run_epoch( model, loader, loss_fn, optimizer, max_epoch, desc_default='', epoch=0):
 
     metrics = Accumulator()
     cnt = 0
@@ -118,9 +118,6 @@ def run_epoch( model, loader, loss_fn, optimizer, max_epoch, desc_default='', ep
         })
         cnt += len(data)
 
-        if scheduler is not None:
-            scheduler.step(epoch - 1 + float(steps) / total_steps)
-
         del preds, loss, top1, top5, data, label
 
     if optimizer:
@@ -147,7 +144,7 @@ def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, shared
             nesterov=not args.no_nesterov,
         )
 
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epoch, eta_min=0.)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer)
     
     result = OrderedDict()
     epoch_start = 1
@@ -157,7 +154,7 @@ def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, shared
     for epoch in range(epoch_start, max_epoch + 1):
         model.train()
         rs = dict()
-        rs['train'] = run_epoch(model, trainloader, criterion, optimizer,max_epoch, desc_default='train', epoch=epoch, scheduler=scheduler)
+        rs['train'] = run_epoch(model, trainloader, criterion, optimizer,max_epoch, desc_default='train', epoch=epoch)
         model.eval()
 
         if math.isnan(rs['train']['loss']):
@@ -166,13 +163,12 @@ def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, shared
         if epoch % 5 == 0 or epoch == max_epoch:
             rs['valid'] = run_epoch(model, validloader, criterion, None,max_epoch, desc_default='valid', epoch=epoch)
             rs['test'] = run_epoch(model, testloader_, criterion, None,max_epoch, desc_default='*test', epoch=epoch)
-
             if metric != 'last':
                 best_top1 = rs[metric]['top1']
             for key, setname in itertools.product(['loss', 'top1', 'top5'], ['train', 'valid', 'test']):
                 result['%s_%s' % (key, setname)] = rs[setname][key]
             result['epoch'] = epoch
-       
+            scheduler.step(rs['valid']['loss'])       
 
     if shared:
         return model, result
