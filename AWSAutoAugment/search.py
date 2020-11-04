@@ -86,7 +86,7 @@ parser.add_argument('--n_worker', type=int, default=16)
 parser.add_argument('--policy_algo', type=str, default='rl', choices=['rl'])
 parser.add_argument('--warmup_epochs', type=int, default=200)
 parser.add_argument('--finetune_epochs', type=int, default=10)
-parser.add_argument('--policy_steps', type=int, default=800)
+parser.add_argument('--policy_steps', type=int, default=500)
 
 """ policy hyper-parameters """
 parser.add_argument('--policy_init_type', type=str, default='uniform', choices=['normal', 'uniform'])
@@ -106,7 +106,7 @@ parser.add_argument('--baseline_ema_weight', type=float, default=0.9)
 """ controller hyper-parameters """
 parser.add_argument('--policy_embedding_size', type=int, default=32)
 parser.add_argument('--policy_hidden_size', type=int, default=100)
-parser.add_argument('--policy_subpolices', type=int, default=25) # number of subpolicies to print
+parser.add_argument('--policy_subpolices', type=int, default=20) # number of subpolicies to print
 
 
         
@@ -139,7 +139,7 @@ def run_epoch( model, loader, loss_fn, optimizer, max_epoch, desc_default='', ep
         cnt += len(data)
 
         del preds, loss, top1, top5, data, label
-
+        
     if optimizer:
         logger.info('[%s %03d/%03d] %s lr=%.6f', desc_default, epoch, max_epoch, metrics / cnt, optimizer.param_groups[0]['lr'])
     else:
@@ -260,8 +260,15 @@ if __name__ == '__main__':
         subpolicies_str.sort(key = lambda subpolices_str: subpolices_str[2], reverse=True)
         for i, subpolicy in enumerate(subpolicies_str[:args.policy_subpolices]):
             logger.info('# Sub-policy {0}: {1}, {2} {3:06f}'.format(i+1, subpolicy[0],subpolicy[1],subpolicy[2]))
-            print('# Sub-policy {0}: {1}, {2} {3:06f}'.format(i+1, subpolicy[0],subpolicy[1],subpolicy[2]), file=policy_fp)            
-     
+            print('# Sub-policy {0}: {1}, {2} {3:06f}'.format(i+1, subpolicy[0],subpolicy[1],subpolicy[2]), file=policy_fp) 
+        logger.info('...')
+        print('...', file=policy_fp)             
+        subpolicies_str.sort(key = lambda subpolices_str: subpolices_str[2])            
+        for i, subpolicy in enumerate(subpolicies_str[:args.policy_subpolices]):
+            logger.info('# Sub-policy {0}: {1}, {2} {3:06f}'.format(i+len(subpolicies_str)-args.policy_subpolices+1,
+                                                                    subpolicy[0],subpolicy[1],subpolicy[2]))
+            print('# Sub-policy {0}: {1}, {2} {3:06f}'.format(i+len(subpolicies_str)-args.policy_subpolices+1,
+                                                              subpolicy[0],subpolicy[1],subpolicy[2]), file=policy_fp)      
         result = train_and_eval(args, curr_weights, args.finetune_epochs,(subpolicies_probs,subpolicies,memory), test_ratio=0.2, cv_fold=0)
 
         new_acc = result['top1_valid']
