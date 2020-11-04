@@ -305,9 +305,10 @@ class AWSAugmentation(object):
         self.policies = policy[1]
         self.memory = policy[2]
         
-        #force sum of policy probs under 1.0 to fit np.random.multimomial
-        while np.sum(self.policy_p[:-1]) > 1.0:
-            self.policy_p -= 1e-8 
+        #force sum of policy probs under 1.0 by normalizing to fit np.random.multimomial
+        if np.sum(self.policy_p[:-1]) > 1.0:
+            print('sum of prob > 1.0. Normalizing')
+            self.policy_p /= np.sum(self.policy_p[:-1])        
             
     def __call__(self, img):
         policy_p = self.policy_p
