@@ -77,6 +77,7 @@ class Controller(nn.Module):
                                     nn.Linear(self.hidden_size, self.hidden_size),
                                     nn.Tanh(),
                                     nn.Linear(self.hidden_size,1)) 
+        self.sum_actions_p = None
 
     def forward(self, input):
         input = self.embedding(input)
@@ -93,14 +94,13 @@ class Controller(nn.Module):
             p = torch.sigmoid(logits)
             actions_p.append(p)
         actions_p = torch.cat(actions_p)
-        actions_p = torch.div(actions_p, torch.sum(actions_p))
+        self.sum_actions_p = torch.sum(actions_p)       
+        actions_p = torch.div(actions_p, self.sum_actions_p)
         actions_log_p = torch.log(actions_p)
-        
+
         return actions_p, actions_log_p
     
     def get_p(self, action_index):
-        actions_p = []
-        actions_log_p = []
         
         for i in action_index:
             input = torch.LongTensor([i]).to(self.device)
@@ -108,7 +108,7 @@ class Controller(nn.Module):
             p = torch.sigmoid(logits)
             actions_p.append(p)
         actions_p = torch.cat(actions_p)
-        actions_p = torch.div(actions_p, torch.sum(actions_p))
+        actions_p = torch.div(actions_p, self.sum_actions_p)
         actions_log_p = torch.log(actions_p)
         
         return actions_p, actions_log_p    
