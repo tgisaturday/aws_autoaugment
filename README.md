@@ -15,7 +15,7 @@ Unofficial [AWS AutoAugment](https://arxiv.org/abs/2009.14737 ) implementation i
 - [x] shared policy
 - [x] augmentation-wise shared model weights
 - [x] PPO+baseline trick
-- [x] CIFAR100 WRN 
+- [ ] CIFAR100 WRN 
 - [ ] CIFAR100 Shake-Shake
 - [ ] CIFAR100 PyramidNet+ShakeDrop
 
@@ -28,6 +28,7 @@ Unofficial [AWS AutoAugment](https://arxiv.org/abs/2009.14737 ) implementation i
 - [ ] ImageNet
 
 ### Future Works
+- [ ] Incremental Learning with Operation Embedding Sharing (CIFAR10 -> CIFAR100 -> ImageNet)
 - [ ] FastAugment + AWS
 - [ ] ProxylessNAS + AWS
 - [ ] Gradient-basedNAS + AWS
