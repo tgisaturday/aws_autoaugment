@@ -12,8 +12,7 @@ from augmentations import augment_list, augment_list_by_name
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    
-
+        
 class PPO(object):
     def __init__(self, lr, betas, clip_epsilon, entropy_weight,embedding_size, hidden_size, baseline_weight, device):
         self.lr = lr
@@ -26,8 +25,8 @@ class PPO(object):
         self.baseline = None
         self.baseline_weight = baseline_weight
         
-    def update(self, acc): 
-        actions_p, actions_log_p = self.controller.get_p()          
+    def update(self, acc, action_index): 
+        actions_p, actions_log_p = self.controller.get_p(action_index)          
         if self.baseline == None:
             self.baseline = acc            
         
@@ -84,7 +83,7 @@ class Controller(nn.Module):
         logits = self.policy(input)
         return logits
     
-    def get_p(self):
+    def distribution(self):
         actions_p = []
         actions_log_p = []
         
@@ -99,6 +98,20 @@ class Controller(nn.Module):
         
         return actions_p, actions_log_p
     
+    def get_p(self, action_index):
+        actions_p = []
+        actions_log_p = []
+        
+        for i in action_index:
+            input = torch.LongTensor([i]).to(self.device)
+            logits = self.forward(input)
+            p = torch.sigmoid(logits)
+            actions_p.append(p)
+        actions_p = torch.cat(actions_p)
+        actions_p = torch.div(actions_p, torch.sum(actions_p))
+        actions_log_p = torch.log(actions_p)
+        
+        return actions_p, actions_log_p    
     
     def convert(self, actions_p):
         operations = []

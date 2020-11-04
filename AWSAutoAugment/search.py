@@ -23,6 +23,26 @@ from networks import get_model, num_class
 from PPO import PPO
 
 
+class Memory:
+    def __init__(self, path):
+        self.file = path
+     
+    def add(self, index):
+        fp = open(self.file, 'a')
+        print(index,file=fp)
+        fp.close()
+
+    def dump(self):
+        action_index = []
+        fp = open(self.file,'r')
+        actions = fp.readlines()
+        for action in actions:
+            action_index.append(int(action))
+        return action_index
+    
+    def reset(self):
+        fp = open(self.file, 'w')        
+        fp.close()
 
 #from hyperopt import hp
 #import ray
@@ -179,6 +199,7 @@ def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, shared
 if __name__ == '__main__':
     args = parser.parse_args()
     args.path = args.path+'/'+args.dataset+'/'+args.model+'/'
+    args.action_path = args.path+'/action_logs.txt'
     args.policy_path = args.path+'/policy_logs.txt'
     args.result_path = args.path+'/policy_found.txt'
     if not os.path.isdir(args.path):
@@ -207,8 +228,8 @@ if __name__ == '__main__':
     policy = PPO(args.policy_lr, betas, args.policy_clip_epsilon, 
                             args.policy_entropy_weight,args.policy_embedding_size, 
                             args.policy_hidden_size, args.baseline_ema_weight, device)
-    controller = policy.controller    
-    
+    controller = policy.controller
+    memory = Memory(args.action_path)
     #uniform sampling for shared policy
     actions_p = torch.FloatTensor([1/(36*36) for i in range(36*36)])
     subpolicies, subpolicies_str, subpolicies_probs  = controller.convert(actions_p)
@@ -220,28 +241,29 @@ if __name__ == '__main__':
 
     else:
         # stage 1 training to get aws with uniform sampling
-        shared_weights, result = train_and_eval(args, shared_weights, args.warmup_epochs, (subpolicies_probs,subpolicies), test_ratio=0.2, cv_fold=0, shared=True)
+        shared_weights, result = train_and_eval(args, shared_weights, args.warmup_epochs, (subpolicies_probs,subpolicies,memory), test_ratio=0.2, cv_fold=0, shared=True)
         logger.info('[Stage 1 top1-valid: %3f', result['top1_valid'])
         logger.info('[Stage 1 top1-test: %3f', result['top1_test'])
         torch.save({'model_state_dict':shared_weights.state_dict()}, args.path+'shared_weights.pth')
-
-
+        
+    memory.reset()
     #stage 2 policy update with PPO
     for t in range(args.policy_steps):
+
         curr_weights = copy.deepcopy(shared_weights)
         policy_fp = open(args.policy_path, 'a')
         logger.info('Controller: Epoch %d / %d' % (t+1, args.policy_steps))
         print('-----Controller: Epoch %d / %d-----' % (t+1, args.policy_steps), file=policy_fp)
         
-        actions_p, actions_log_p = controller.get_p()
+        actions_p, actions_log_p = controller.distribution()
         subpolicies, subpolicies_str, subpolicies_probs  = controller.convert(actions_p)
         subpolicies_str.sort(key = lambda subpolices_str: subpolices_str[2], reverse=True)
         for i, subpolicy in enumerate(subpolicies_str[:args.policy_subpolices]):
             logger.info('# Sub-policy {0}: {1}, {2} {3:06f}'.format(i+1, subpolicy[0],subpolicy[1],subpolicy[2]))
             print('# Sub-policy {0}: {1}, {2} {3:06f}'.format(i+1, subpolicy[0],subpolicy[1],subpolicy[2]), file=policy_fp)            
+     
+        result = train_and_eval(args, curr_weights, args.finetune_epochs,(subpolicies_probs,subpolicies,memory), test_ratio=0.2, cv_fold=0)
 
-        result = train_and_eval(args, curr_weights, args.finetune_epochs,(subpolicies_probs,subpolicies), test_ratio=0.2, cv_fold=0)
-       
         new_acc = result['top1_valid']
         
         logger.info('-----------------------------------')
@@ -252,15 +274,17 @@ if __name__ == '__main__':
         else:
             baseline = policy.baseline           
             logger.info('Controller: Epoch %d / %d: new_acc: %3f baseline: %3f' % (t+1, args.policy_steps,new_acc, baseline))  
-            print('Controller: Epoch %d / %d: new_acc: %3f baseline: %3f' % (t+1, args.policy_steps,new_acc, baseline), file=policy_fp)       
-        policy.update(new_acc)
-        policy_fp.close()     
+            print('Controller: Epoch %d / %d: new_acc: %3f baseline: %3f' % (t+1, args.policy_steps,new_acc, baseline), file=policy_fp) 
+        action_index = memory.dump()
+        policy.update(new_acc, action_index)
+        policy_fp.close()  
+        memory.reset()
         
     logger.info('Best policies found.')  
     policy_fp = open(args.policy_path, 'a')
     result_fp = open(args.result_path, 'w')    
     print('------- Best Policies Found -------', file=policy_fp)
-    actions_p, actions_log_p = controller.get_p()    
+    actions_p, actions_log_p = controller.distribution()    
     subpolicies, subpolicies_str, subpolicies_probs  = controller.convert(actions_p)    
     subpolicies_str.sort(key = lambda subpolices_str: subpolices_str[2], reverse=True)
     for i, subpolicy in enumerate(subpolicies_str):
