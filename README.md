@@ -1,5 +1,5 @@
 # Improving Auto-Augment via Augmentation-Wise Weight Sharing
-Unofficial [AWS AutoAugment](https://arxiv.org/abs/2009.14737 ) implementation in PyTorch.
+Unofficial [AWS AutoAugment](https://arxiv.org/abs/2009.14737) implementation in PyTorch.
 
 - AWS AutoAugment learns augmentation policies using augmentation-wise shared model weights
 
@@ -15,7 +15,8 @@ Unofficial [AWS AutoAugment](https://arxiv.org/abs/2009.14737 ) implementation i
 - [x] shared policy
 - [x] augmentation-wise shared model weights
 - [x] PPO+baseline trick
-- [x] Training Code
+- [x] search code
+- [x] training code
 - [ ] Enlarge Batch (EB)
 - [ ] CIFAR100 WRN 
 - [ ] CIFAR100 Shake-Shake
@@ -68,41 +69,17 @@ We conducted experiments under
 
 ### Search a augmentation policy
 
-<!---Please read ray's document to construct a proper ray cluster : https://github.com/ray-project/ray, and run search.py with the master's redis address.
+```
+$ python AWSAutoAugment/search.py --path --dataroot ...
+```
 
-```
-$ python search.py -c confs/wresnet40x2_cifar10_b512.yaml --dataroot ... --redis ...
-```-->
-
-```
-$ python search.py 
-```
 ### Train a model with found policies
 
-<!---You can train network architectures on CIFAR-10 / 100 and ImageNet with our searched policies.
-
-- fa_reduced_cifar10 : reduced CIFAR-10(4k images), WResNet-40x2
-- fa_reduced_imagenet : reduced ImageNet(50k images, 120 classes), ResNet-50
+```
+$ python AWSAutoAugment/train.py --path --dataroot ... --policy_checkpoint
 
 ```
-$ export PYTHONPATH=$PYTHONPATH:$PWD
-$ python FastAutoAugment/train.py -c confs/wresnet40x2_cifar10_b512.yaml --aug fa_reduced_cifar10 --dataset cifar10
-$ python FastAutoAugment/train.py -c confs/wresnet40x2_cifar10_b512.yaml --aug fa_reduced_cifar10 --dataset cifar100
-$ python FastAutoAugment/train.py -c confs/wresnet28x10_cifar10_b512.yaml --aug fa_reduced_cifar10 --dataset cifar10
-$ python FastAutoAugment/train.py -c confs/wresnet28x10_cifar10_b512.yaml --aug fa_reduced_cifar10 --dataset cifar100
-...
-$ python FastAutoAugment/train.py -c confs/resnet50_b512.yaml --aug fa_reduced_imagenet
-$ python FastAutoAugment/train.py -c confs/resnet200_b512.yaml --aug fa_reduced_imagenet
-```
 
-By adding --only-eval and --save arguments, you can test trained models without training.
-
-If you want to train with multi-gpu/node, use `torch.distributed.launch` such as
-
-```bash
-$ python -m torch.distributed.launch --nproc_per_node={num_gpu_per_node} --nnodes={num_node} --master_addr={master} --master_port={master_port} --node_rank={0,1,2,...,num_node} FastAutoAugment/train.py -c confs/efficientnet_b4.yaml --aug fa_reduced_imagenet
-```
--->
 ## References & Opensources
 
 We increase the batch size and adapt the learning rate accordingly to boost the training. Otherwise, we set other hyperparameters equal to AutoAugment if possible. For the unknown hyperparameters, we follow values from the original references or we tune them to match baseline performances.
