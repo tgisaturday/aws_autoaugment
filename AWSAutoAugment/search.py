@@ -14,7 +14,7 @@ import operator
 import torch.backends.cudnn as cudnn
 from tqdm import tqdm
 
-#from FastAutoAugment.archive import remove_deplicates, policy_decoder
+
 from augmentations import augment_list
 from common import get_logger, add_filehandler
 from data import get_dataloaders
@@ -47,13 +47,6 @@ class Memory:
         fp = open(self.file, 'w')        
         fp.close()
 
-#from hyperopt import hp
-#import ray
-#import gorilla
-#from ray.tune.trial import Trial
-#from ray.tune.trial_runner import TrialRunner
-#from ray.tune.suggest import HyperOptSearch
-#from ray.tune import register_trainable, run_experiments
 
 logger = get_logger('AWS AutoAugment')
 

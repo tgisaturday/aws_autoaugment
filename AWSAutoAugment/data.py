@@ -16,7 +16,7 @@ from imagenet import ImageNet
 
 from augmentations import Lighting
 
-logger = get_logger('AWSAugment')
+logger = get_logger('AWS Augment')
 logger.setLevel(logging.INFO)
 _IMAGENET_PCA = {
     'eigval': [0.2175, 0.0188, 0.0045],
