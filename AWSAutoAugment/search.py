@@ -37,7 +37,10 @@ class Memory:
         fp = open(self.file,'r')
         actions = fp.readlines()
         for action in actions:
-            action_index.append(int(action))
+            try:
+                action_index.append(int(action))
+            except:
+                logger.info('invalid action string, skipping')
         return action_index
     
     def reset(self):
