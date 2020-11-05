@@ -154,7 +154,7 @@ def run_epoch( model, loader, loss_fn, optimizer, max_epoch, desc_default='', ep
         metrics.metrics['lr'] = optimizer.param_groups[0]['lr']
     return metrics
 
-def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, shared=False, metric='last'):
+def train_and_eval(args, lr, model, epoch, policy, test_ratio=0.0, cv_fold=0, shared=False, metric='last'):
 
     max_epoch = epoch
     trainsampler, trainloader, validloader, testloader_ = get_dataloaders(args, policy, test_ratio, split_idx=cv_fold)
@@ -238,6 +238,9 @@ if __name__ == '__main__':
     actions_p = torch.FloatTensor([1/(36*36) for i in range(36*36)])
     subpolicies, subpolicies_str, subpolicies_probs  = controller.convert(actions_p)
     
+    #set init_lr to warmup_lr
+    args.init_lr = args.warmup_lr
+    
     if args.resume:
         logger.info('Loading pretrained shared weights')
         checkpoint = torch.load(args.path+'shared_weights.pth')
@@ -251,6 +254,10 @@ if __name__ == '__main__':
         torch.save({'model_state_dict':shared_weights.state_dict()}, args.path+'shared_weights.pth')
         
     memory.reset()
+    
+    #set init_lr to finetune_lr
+    args.init_lr = args.finetune_lr
+    
     #stage 2 policy update with PPO
     for t in range(args.policy_steps):
 
