@@ -17,7 +17,7 @@ Unofficial [AWS AutoAugment](https://arxiv.org/abs/2009.14737) implementation in
 - [x] PPO+baseline trick
 - [x] search code
 - [x] training code
-- [ ] Enlarge Batch (EB)
+- [x] Enlarge Batch (EB)
 - [ ] CIFAR100 WRN 
 - [ ] CIFAR100 Shake-Shake
 - [ ] CIFAR100 PyramidNet+ShakeDrop
