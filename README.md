@@ -15,20 +15,22 @@ Unofficial [AWS AutoAugment](https://arxiv.org/abs/2009.14737 ) implementation i
 - [x] shared policy
 - [x] augmentation-wise shared model weights
 - [x] PPO+baseline trick
+- [x] Training Code
+- [ ] Enlarge Batch (EB)
 - [ ] CIFAR100 WRN 
 - [ ] CIFAR100 Shake-Shake
 - [ ] CIFAR100 PyramidNet+ShakeDrop
 
 ### Possible Modification
+- [ ] Faster action recorder with pickle (currently using txt)
 - [ ] Random Search
 - [ ] Policy Gradient
-- [ ] Weight exponential moving average for shared model weights
 - [ ] Stocastic Depth 
 - [ ] CIFAR10 
 - [ ] ImageNet
 
 ### Future Works
-- [ ] Incremental Learning with Operation Embedding Sharing (CIFAR10 -> CIFAR100 -> ImageNet)
+- [ ] Incremental Searching with Operation Embedding Sharing (CIFAR10 -> CIFAR100 -> ImageNet)
 - [ ] FastAugment + AWS
 - [ ] ProxylessNAS + AWS
 - [ ] Gradient-basedNAS + AWS

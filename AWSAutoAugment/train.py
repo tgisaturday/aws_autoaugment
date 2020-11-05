@@ -87,7 +87,6 @@ parser.add_argument('--n_worker', type=int, default=16)
 """ controller hyper-parameters """
 parser.add_argument('--policy_embedding_size', type=int, default=32)
 parser.add_argument('--policy_hidden_size', type=int, default=100)
-parser.add_argument('--policy_subpolices', type=int, default=20) # number of subpolicies to print
 
         
 def run_epoch(model, loader, loss_fn, optimizer, max_epoch, desc_default='', epoch=0):
@@ -174,29 +173,36 @@ def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, metric
         result['epoch'] = epoch
         if result['top1_test'] > best_top1:
             best_top1 = result['top1_test']
-            os.remove(args.path+'best_weight.pth')
+            log_fp = open(args.log_path, 'a')             
+            logger.info('Epoch {0} new best top1: {1:03f}'.format(epoch,best_top1))
+            print('Epoch {0} new best top1: {1:03f}'.format(epoch,best_top1), file=log_fp)       
+
+            if os.path.isfile(args.path+'best_weight.pth'):
+                os.remove(args.path+'best_weight.pth')
             #save current best
             torch.save({                        
                         'epoch': epoch,
                         'log': {
                             'train': rs['train'].get_dict(),
-                            'valid': rs['valid'].get_dict(),
                             'test': rs['test'].get_dict(),
                             },
                         'optimizer': optimizer.state_dict(),
                         'model_state_dict':model.state_dict()
-                        }, args.path+'best_weight.pth') 
+                        }, args.path+'/best_weight.pth') 
+            
+            logger.info('Saving models to {}'.format(args.path+'best_weight.pth'))
+            print('Saving models to {}'.format(args.path+'best_weight.pth'), file=log_fp)     
+            log_fp.close()
         #save checkpoint    
         torch.save({                        
                     'epoch': epoch,
                     'log': {
                     'train': rs['train'].get_dict(),
-                    'valid': rs['valid'].get_dict(),
                     'test': rs['test'].get_dict(),
                     },
                    'optimizer': optimizer.state_dict(),
                    'model_state_dict':model.state_dict()
-                    }, args.path+'checkpoint.pth')              
+                    }, args.path+'/checkpoint.pth')              
     return best_top1
 
 if __name__ == '__main__':
@@ -226,12 +232,11 @@ if __name__ == '__main__':
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
     os.makedirs(args.path, exist_ok=True)
     model = get_model(args.conf, num_class(args.dataset))
-
         
     memory = Memory(args.action_path)
     
     #load learned policy    
-    controller = Controller(args.policy_embedding_size, args.policy_hidden_size, device)
+    controller = Controller(args.policy_embedding_size, args.policy_hidden_size, device).to(device)
     controller_checkpoint = torch.load(args.policy_checkpoint)
     controller.load_state_dict(controller_checkpoint['model_state_dict'])    
     actions_p, actions_log_p = controller.distribution()
@@ -242,14 +247,14 @@ if __name__ == '__main__':
     log_fp = open(args.log_path, 'a')    
     logger.info('------ Learned Policy with AWS Augment ------')
     print('------ Learned Policy with AWS Augment ------', file=log_fp)    
-    for i, subpolicy in enumerate(subpolicies_str[:args.policy_subpolices]):
-        if subpolicy[2] > 0.0:
+    for i, subpolicy in enumerate(subpolicies_str):
+        if subpolicy[2] > 1e-6:
             logger.info('# Sub-policy {0}: {1}, {2} {3:06f}'.format(i+1, subpolicy[0],subpolicy[1],subpolicy[2]))
             print('# Sub-policy {0}: {1}, {2} {3:06f}'.format(i+1, subpolicy[0],subpolicy[1],subpolicy[2]), file=log_fp)
     log_fp.close()   
     
 
-    result = train_and_eval(args, model, args.n_epochs, (subpolicies_probs,subpolicies,memory))
-    logger.info('[Best top1-test: %3f', result['top1_test'])
+    best_top1 = train_and_eval(args, model, args.n_epochs, (subpolicies_probs,subpolicies,memory))
+    logger.info('[Best top1-test: {0:06f}'.format(best_top1))
 
         
