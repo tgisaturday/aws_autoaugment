@@ -121,9 +121,9 @@ def run_epoch(model, loader, loss_fn, optimizer, max_epoch, desc_default='', epo
         del preds, loss, top1, top5, data, label
         
     if optimizer:
-        logger.info('[%s %03d/%03d] %s lr=%.6f', desc_default, epoch, max_epoch, metrics / cnt, optimizer.param_groups[0]['lr'])
+        logger.info('[%s %03d/%03d] %s lr=%.6f', desc_default, epoch+1, max_epoch, metrics / cnt, optimizer.param_groups[0]['lr'])
     else:
-        logger.info('[%s %03d/%03d] %s', desc_default, epoch, max_epoch, metrics / cnt)
+        logger.info('[%s %03d/%03d] %s', desc_default, epoch+1, max_epoch, metrics / cnt)
 
     metrics /= cnt
     if optimizer:
@@ -164,9 +164,9 @@ def run_epoch_with_EB(model, loader, loss_fn, optimizer, max_epoch, desc_default
         del preds, loss, top1, top5, data, label
         
     if optimizer:
-        logger.info('[%s %03d/%03d] %s lr=%.6f', desc_default, epoch, max_epoch, metrics / cnt, optimizer.param_groups[0]['lr'])
+        logger.info('[%s %03d/%03d] %s lr=%.6f', desc_default, epoch+1, max_epoch, metrics / cnt, optimizer.param_groups[0]['lr'])
     else:
-        logger.info('[%s %03d/%03d] %s', desc_default, epoch, max_epoch, metrics / cnt)
+        logger.info('[%s %03d/%03d] %s', desc_default, epoch+1, max_epoch, metrics / cnt)
 
     metrics /= cnt
     if optimizer:
