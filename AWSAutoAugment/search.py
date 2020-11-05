@@ -66,7 +66,6 @@ parser.add_argument('--checkpoint',type=str)
 parser.add_argument('--manual_seed', default=0, type=int)
 
 """ run config """
-parser.add_argument('--n_epochs', type=int, default=10)
 parser.add_argument('--warmup_lr', type=float, default=0.4)
 parser.add_argument('--finetune_lr', type=float, default=0.025)
 parser.add_argument('--lr_schedule', type=str, default='cosine')
