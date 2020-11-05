@@ -64,14 +64,15 @@ parser.add_argument('--resume', action='store_true')
 parser.add_argument('--checkpoint',type=str)
 parser.add_argument('--manual_seed', default=0, type=int)
 
+parser.add_argument('--policy_checkpoint', type=str)
 """ run config """
 parser.add_argument('--init_lr', type=float, default=0.4)
 parser.add_argument('--n_epochs', type=int, default=300)
 parser.add_argument('--lr_schedule', type=str, default='cosine')
 parser.add_argument('--cutout', type=int, default=16)
 parser.add_argument('--label_smoothing', type=float, default=0.0)
+parser.add_argument('--enlarge_batch', action='store_true')
 
-parser.add_argument('--policy_checkpoint', type=str)
 
 parser.add_argument('--dataset', type=str, default='cifar100', choices=['cifar10', 'cifar100','imagenet'])
 parser.add_argument('--model', type=str, default='wresnet28_10', choices=['wresnet28_10'])
@@ -129,10 +130,10 @@ def run_epoch(model, loader, loss_fn, optimizer, max_epoch, desc_default='', epo
         metrics.metrics['lr'] = optimizer.param_groups[0]['lr']
     return metrics
 
-def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, metric='last'):
+def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, metric='last', EB=False):
 
     max_epoch = epoch
-    trainsampler, trainloader, validloader, testloader_ = get_dataloaders(args, policy, test_ratio, split_idx=cv_fold)
+    trainsampler, trainloader, validloader, testloader_ = get_dataloaders(args, policy, test_ratio, split_idx=cv_fold, EB)
 
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(
@@ -254,7 +255,7 @@ if __name__ == '__main__':
     log_fp.close()   
     
 
-    best_top1 = train_and_eval(args, model, args.n_epochs, (subpolicies_probs,subpolicies,memory))
+    best_top1 = train_and_eval(args, model, args.n_epochs, (subpolicies_probs,subpolicies,memory), EB = args.enlarge_batch)
     logger.info('[Best top1-test: {0:06f}'.format(best_top1))
 
         

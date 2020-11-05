@@ -1,7 +1,7 @@
 # code in this file is adpated from rpmcruz/autoaugment
 # https://github.com/rpmcruz/autoaugment/blob/master/transformations.py
 import random
-
+import copy
 import PIL, PIL.ImageOps, PIL.ImageEnhance, PIL.ImageDraw
 import numpy as np
 import torch
@@ -323,3 +323,34 @@ class AWSAugmentation(object):
         img = augment_fn1(img.copy(), mag1)
         img = augment_fn2(img.copy(), mag2)  
         return img
+
+class EB_AWSAugmentation(object):
+    def __init__(self, policy):
+        self.policy_p = policy[0]
+        self.policies = policy[1]
+        self.memory = policy[2]
+        
+        #force sum of policy probs under 1.0 by normalizing to fit np.random.multimomial
+        if np.sum(self.policy_p[:-1]) > 1.0:
+            print('sum of prob > 1.0. Normalizing')
+            self.policy_p /= np.sum(self.policy_p[:-1])        
+            
+    def __call__(self, img, M=8):
+        policy_p = copy.deepcopy(self.policy_p)
+        imgs = []
+        for i in range(M):
+            imgs.append(img.copy())
+        for i in range(M):
+            rng = np.random.default_rng()        
+            action_index = np.argmax(rng.multinomial(1, policy_p))
+            self.memory.add(action_index)
+            policy_p[action_index] = 0.0
+            policy = self.policies[action_index]
+            augment_fn1 = policy[0][0]
+            mag1 = policy[0][1]
+            augment_fn2 = policy[1][0]
+            mag2 = policy[1][1]
+            imgs[i] = augment_fn1(imgs[i].copy(), mag1)
+            imgs[i] = augment_fn2(imgs[i].copy(), mag2)  
+            
+        return imgs[0], imgs[1], imgs[2], imgs[3], imgs[4]

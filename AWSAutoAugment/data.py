@@ -29,7 +29,7 @@ _IMAGENET_PCA = {
 _CIFAR_MEAN, _CIFAR_STD = (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
 
 
-def get_dataloaders(args, policy='uniform', split=0.15, split_idx=0):
+def get_dataloaders(args, policy='uniform', split=0.15, split_idx=0, EB=False):
     dataset = args.dataset
     batch = args.batch_size
     dataroot = args.dataroot
@@ -67,9 +67,12 @@ def get_dataloaders(args, policy='uniform', split=0.15, split_idx=0):
     else:
         raise ValueError('dataset=%s' % dataset)
 
-    
-    #apply current policy
-    transform_train.transforms.insert(-2, AWSAugmentation(policy))
+    if EB:
+        #apply current policy with enlarge batch
+        transform_train.transforms.insert(-2, EB_AWSAugmentation(policy))   
+    else:
+        #apply current policy
+        transform_train.transforms.insert(-2, AWSAugmentation(policy))
  
         
     if args.cutout > 0:
