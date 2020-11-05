@@ -153,7 +153,7 @@ def run_epoch( model, loader, loss_fn, optimizer, max_epoch, desc_default='', ep
         metrics.metrics['lr'] = optimizer.param_groups[0]['lr']
     return metrics
 
-def train_and_eval(args, lr, model, epoch, policy, test_ratio=0.0, cv_fold=0, shared=False, metric='last'):
+def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, shared=False, metric='last'):
 
     max_epoch = epoch
     trainsampler, trainloader, validloader, testloader_ = get_dataloaders(args, policy, test_ratio, split_idx=cv_fold)
