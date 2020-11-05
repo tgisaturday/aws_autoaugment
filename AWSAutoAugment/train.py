@@ -72,6 +72,7 @@ parser.add_argument('--lr_schedule', type=str, default='cosine')
 parser.add_argument('--cutout', type=int, default=16)
 parser.add_argument('--label_smoothing', type=float, default=0.0)
 parser.add_argument('--enlarge_batch', action='store_true')
+parser.add_argument('--enlarge_batch_size',type=int, default=8)
 
 
 parser.add_argument('--dataset', type=str, default='cifar100', choices=['cifar10', 'cifar100','imagenet'])
@@ -130,10 +131,52 @@ def run_epoch(model, loader, loss_fn, optimizer, max_epoch, desc_default='', epo
         metrics.metrics['lr'] = optimizer.param_groups[0]['lr']
     return metrics
 
+def run_epoch_with_EB(model, loader, loss_fn, optimizer, max_epoch, desc_default='', epoch=0):
+
+    metrics = Accumulator()
+    cnt = 0
+    total_steps = len(loader)
+    steps = 0
+    for data, label in loader:
+        steps += 1
+        label = label.cuda()
+        if optimizer:
+            optimizer.zero_grad()
+        losses = []
+        for i, datum in enumerate(data):
+            datum = datum.cuda()
+            preds = model(datum)
+            loss = loss_fn(preds, label)
+            losses.append(loss)
+        loss = torch.mean(torch.stack(losses))
+
+        if optimizer:
+            loss.backward()
+            optimizer.step()
+
+        top1, top5 = accuracy(preds, label, (1, 5))
+        metrics.add_dict({
+            'loss': loss.item() * len(data),
+            'top1': top1.item() * len(data),
+            'top5': top5.item() * len(data),
+        })
+        cnt += len(data)
+
+        del preds, loss, top1, top5, data, label
+        
+    if optimizer:
+        logger.info('[%s %03d/%03d] %s lr=%.6f', desc_default, epoch, max_epoch, metrics / cnt, optimizer.param_groups[0]['lr'])
+    else:
+        logger.info('[%s %03d/%03d] %s', desc_default, epoch, max_epoch, metrics / cnt)
+
+    metrics /= cnt
+    if optimizer:
+        metrics.metrics['lr'] = optimizer.param_groups[0]['lr']
+    return metrics
 def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, metric='last', EB=False):
 
     max_epoch = epoch
-    trainsampler, trainloader, validloader, testloader_ = get_dataloaders(args, policy, test_ratio, split_idx=cv_fold, EB)
+    trainsampler, trainloader, validloader, testloader_ = get_dataloaders(args, policy, test_ratio, split_idx=cv_fold, EB=EB)
 
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(
@@ -160,7 +203,10 @@ def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, metric
     for epoch in range(epoch_start, max_epoch + 1):
         model.train()
         rs = dict()
-        rs['train'] = run_epoch(model, trainloader, criterion, optimizer,max_epoch, desc_default='train', epoch=epoch)
+        if EB:
+            rs['train'] = run_epoch_with_EB(model, trainloader, criterion, optimizer,max_epoch, desc_default='train', epoch=epoch)            
+        else:
+            rs['train'] = run_epoch(model, trainloader, criterion, optimizer,max_epoch, desc_default='train', epoch=epoch)
         model.eval()
         scheduler.step()
         if math.isnan(rs['train']['loss']):

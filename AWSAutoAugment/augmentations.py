@@ -6,9 +6,11 @@ import PIL, PIL.ImageOps, PIL.ImageEnhance, PIL.ImageDraw
 import numpy as np
 import torch
 from torchvision.transforms.transforms import Compose
+from torchvision.transforms.functional import to_tensor, normalize
 
 random_mirror = True
 
+_CIFAR_MEAN, _CIFAR_STD = (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
 
 def ShearX(img, v):  # [-0.3, 0.3]
     assert -0.3 <= v <= 0.3
@@ -285,6 +287,22 @@ class CutoutDefault(object):
         img *= mask
         return img
 
+def cutout_default(img, length):
+    h, w = img.size(1), img.size(2)
+    mask = np.ones((h, w), np.float32)
+    y = np.random.randint(h)
+    x = np.random.randint(w)
+
+    y1 = np.clip(y - length // 2, 0, h)
+    y2 = np.clip(y + length // 2, 0, h)
+    x1 = np.clip(x - length // 2, 0, w)
+    x2 = np.clip(x + length // 2, 0, w)
+
+    mask[y1: y2, x1: x2] = 0.
+    mask = torch.from_numpy(mask)
+    mask = mask.expand_as(img)
+    img *= mask
+    return img    
 
 class Augmentation(object):
     def __init__(self, policies):
@@ -325,25 +343,28 @@ class AWSAugmentation(object):
         return img
 
 class EB_AWSAugmentation(object):
-    def __init__(self, policy):
+    def __init__(self, policy, M, cutout):
         self.policy_p = policy[0]
         self.policies = policy[1]
         self.memory = policy[2]
-        
+        self.cutout = cutout
+        self.M = M
         #force sum of policy probs under 1.0 by normalizing to fit np.random.multimomial
         if np.sum(self.policy_p[:-1]) > 1.0:
             print('sum of prob > 1.0. Normalizing')
             self.policy_p /= np.sum(self.policy_p[:-1])        
             
-    def __call__(self, img, M=8):
+    def __call__(self, img):
         policy_p = copy.deepcopy(self.policy_p)
         imgs = []
+        M = self.M
         for i in range(M):
             imgs.append(img.copy())
         for i in range(M):
             rng = np.random.default_rng()        
             action_index = np.argmax(rng.multinomial(1, policy_p))
             self.memory.add(action_index)
+            #enables sampling without replacement
             policy_p[action_index] = 0.0
             policy = self.policies[action_index]
             augment_fn1 = policy[0][0]
@@ -352,5 +373,7 @@ class EB_AWSAugmentation(object):
             mag2 = policy[1][1]
             imgs[i] = augment_fn1(imgs[i].copy(), mag1)
             imgs[i] = augment_fn2(imgs[i].copy(), mag2)  
-            
-        return imgs[0], imgs[1], imgs[2], imgs[3], imgs[4]
+            imgs[i] = normalize(to_tensor(imgs[i]),_CIFAR_MEAN, _CIFAR_STD)
+            if self.cutout > 0:
+                imgs[i] = cutout_default(imgs[i],self.cutout)        
+        return imgs

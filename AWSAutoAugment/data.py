@@ -13,7 +13,7 @@ from sklearn.model_selection import StratifiedShuffleSplit
 from augmentations import *
 from common import get_logger
 from imagenet import ImageNet
-
+from enlarged_cifar import EB_CIFAR10, EB_CIFAR100
 from augmentations import Lighting
 
 logger = get_logger('AWS Augment')
@@ -69,20 +69,27 @@ def get_dataloaders(args, policy='uniform', split=0.15, split_idx=0, EB=False):
 
     if EB:
         #apply current policy with enlarge batch
-        transform_train.transforms.insert(-2, EB_AWSAugmentation(policy))   
+        transform_train.transforms.insert(-2, EB_AWSAugmentation(policy,args.enlarge_batch_size, args.cutout))       
+        transform_train.transforms.pop(-1)
+        transform_train.transforms.pop(-1) 
     else:
         #apply current policy
         transform_train.transforms.insert(-2, AWSAugmentation(policy))
- 
+        if args.cutout > 0:
+            transform_train.transforms.append(CutoutDefault(args.cutout)) 
         
-    if args.cutout > 0:
-        transform_train.transforms.append(CutoutDefault(args.cutout))
 
     if dataset == 'cifar10':
-        total_trainset = torchvision.datasets.CIFAR10(root=dataroot, train=True, download=True, transform=transform_train)
+        if EB:
+            total_trainset = EB_CIFAR10(root=dataroot, train=True, download=True, transform=transform_train, M=args.enlarge_batch_size)            
+        else:
+            total_trainset = torchvision.datasets.CIFAR10(root=dataroot, train=True, download=True, transform=transform_train)
         testset = torchvision.datasets.CIFAR10(root=dataroot, train=False, download=True, transform=transform_test)
     elif dataset == 'cifar100':
-        total_trainset = torchvision.datasets.CIFAR100(root=dataroot, train=True, download=True, transform=transform_train)
+        if EB:
+            total_trainset = EB_CIFAR100(root=dataroot, train=True, download=True, transform=transform_train, M=args.enlarge_batch_size)            
+        else:
+            total_trainset = torchvision.datasets.CIFAR100(root=dataroot, train=True, download=True, transform=transform_train)
         testset = torchvision.datasets.CIFAR100(root=dataroot, train=False, download=True, transform=transform_test)
     elif dataset == 'svhn':
         trainset = torchvision.datasets.SVHN(root=dataroot, split='train', download=True, transform=transform_train)
