@@ -76,7 +76,7 @@ $ python AWSAutoAugment/search.py --path --dataroot ...
 ### Train a model with found policies
 
 ```
-$ python AWSAutoAugment/train.py --path --dataroot ... --policy_checkpoint
+$ python AWSAutoAugment/train.py --path --dataroot ... --policy_checkpoint ...
 
 ```
 
