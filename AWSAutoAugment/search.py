@@ -64,7 +64,7 @@ parser.add_argument('--manual_seed', default=0, type=int)
 
 """ run config """
 parser.add_argument('--n_epochs', type=int, default=10)
-parser.add_argument('--init_lr', type=float, default=0.025)
+parser.add_argument('--init_lr', type=float, default=0.4)
 parser.add_argument('--lr_schedule', type=str, default='cosine')
 parser.add_argument('--cutout', type=int, default=16)
 parser.add_argument('--label_smoothing', type=float, default=0.0)
@@ -164,7 +164,7 @@ def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, shared
             nesterov=not args.no_nesterov,
         )
 
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epoch)
     
     result = OrderedDict()
     epoch_start = 1
@@ -176,7 +176,7 @@ def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, shared
         rs = dict()
         rs['train'] = run_epoch(model, trainloader, criterion, optimizer,max_epoch, desc_default='train', epoch=epoch)
         model.eval()
-
+        scheduler.step()
         if math.isnan(rs['train']['loss']):
             raise Exception('train loss is NaN.')
 
@@ -188,7 +188,7 @@ def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, shared
             for key, setname in itertools.product(['loss', 'top1', 'top5'], ['train', 'valid', 'test']):
                 result['%s_%s' % (key, setname)] = rs[setname][key]
             result['epoch'] = epoch
-            scheduler.step(rs['valid']['loss'])       
+     
 
     if shared:
         return model, result
