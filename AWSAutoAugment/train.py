@@ -59,7 +59,6 @@ logger = get_logger('AWS AutoAugment')
 parser = argparse.ArgumentParser()
 parser.add_argument('--path', type=str, default='./results')
 parser.add_argument('--dataroot', type=str, default='./data')
-parser.add_argument('--gpu', help='gpu available', default='0,1,2,3')
 parser.add_argument('--resume', action='store_true')
 parser.add_argument('--checkpoint',type=str)
 parser.add_argument('--manual_seed', default=0, type=int)
@@ -188,19 +187,22 @@ def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, metric
         )
 
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epoch)
-    
+    start_epoch = 0
     if args.resume:
         logger.info('Loading pretrained weights')
         checkpoint = torch.load(args.checkpoint)
-        model.load_state_dict(checkpoint['model_state_dict'])      
+        if args.num_gpu > 1:
+            model.module.load_state_dict(checkpoint['model_state_dict'])                  
+        else:
+            model.load_state_dict(checkpoint['model_state_dict'])      
         optimizer.load_state_dict(checkpoint['optimizer'])  
-        
+        start_epoch = checkpoint['epoch'] + 1
     result = OrderedDict()
-    epoch_start = 1
+
 
     # train loop
     best_top1 = 0.0
-    for epoch in range(epoch_start, max_epoch + 1):
+    for epoch in range(start_epoch, max_epoch + 1):
         model.train()
         rs = dict()
         if EB:
@@ -218,15 +220,25 @@ def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, metric
         for key, setname in itertools.product(['loss', 'top1', 'top5'], ['train', 'test']):
             result['%s_%s' % (key, setname)] = rs[setname][key]
         result['epoch'] = epoch
+        
+        if args.num_gpu > 1:
+            model_state_dict = model.module.state_dict()
+        else:
+            model_state_dict =model.state_dict() 
+            
         if result['top1_test'] > best_top1:
             best_top1 = result['top1_test']
             log_fp = open(args.log_path, 'a')             
-            logger.info('Epoch {0} new best top1: {1:03f}'.format(epoch,best_top1))
-            print('Epoch {0} new best top1: {1:03f}'.format(epoch,best_top1), file=log_fp)       
+            logger.info('Epoch {0} new best top1: {1:03f}'.format(epoch+1,best_top1))
+            print('Epoch {0} new best top1: {1:03f}'.format(epoch+1,best_top1), file=log_fp)       
 
             if os.path.isfile(args.path+'best_weight.pth'):
                 os.remove(args.path+'best_weight.pth')
             #save current best
+            if args.num_gpu > 1:
+                model_state_dict = model.module.state_dict()
+            else:
+                model_state_dict =model.state_dict()
             torch.save({                        
                         'epoch': epoch,
                         'log': {
@@ -234,7 +246,7 @@ def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, metric
                             'test': rs['test'].get_dict(),
                             },
                         'optimizer': optimizer.state_dict(),
-                        'model_state_dict':model.state_dict()
+                        'model_state_dict':model_state_dict
                         }, args.path+'/best_weight.pth') 
             
             logger.info('Saving models to {}'.format(args.path+'best_weight.pth'))
@@ -248,7 +260,7 @@ def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, metric
                     'test': rs['test'].get_dict(),
                     },
                    'optimizer': optimizer.state_dict(),
-                   'model_state_dict':model.state_dict()
+                   'model_state_dict':model_state_dict
                     }, args.path+'/checkpoint.pth')              
     return best_top1
 
@@ -276,10 +288,11 @@ if __name__ == '__main__':
     else:
         device = torch.device('cpu')
         
-    os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
-    os.makedirs(args.path, exist_ok=True)
+    args.num_gpu = torch.cuda.device_count()
     model = get_model(args.conf, num_class(args.dataset))
-        
+    if args.num_gpu > 1:
+         model = nn.DataParallel(model)  
+            
     memory = Memory(args.action_path)
     
     #load learned policy    
@@ -290,7 +303,7 @@ if __name__ == '__main__':
     subpolicies, subpolicies_str, subpolicies_probs  = controller.convert(actions_p)
     
     subpolicies_str.sort(key = lambda subpolices_str: subpolices_str[2], reverse=True)
-    
+    del controller
     log_fp = open(args.log_path, 'a')    
     logger.info('------ Learned Policy with AWS Augment ------')
     print('------ Learned Policy with AWS Augment ------', file=log_fp)    

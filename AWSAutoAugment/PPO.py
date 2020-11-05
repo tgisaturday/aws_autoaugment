@@ -1,5 +1,5 @@
-#imported from https://github.com/MarSaKi/nasnet/blob/master/PPO.py
-
+#based on https://github.com/MarSaKi/nasnet/blob/master/PPO.py
+import os
 import torch
 import torch.nn as nn
 from torch.distributions import Categorical
@@ -36,8 +36,25 @@ class PPO(object):
             loss.backward()
             self.optimizer.step()            
             #update baseline for next step
-            self.baseline = self.baseline * self.baseline_weight + acc* (1 - self.baseline_weight)          
-       
+            self.baseline = self.baseline * self.baseline_weight + acc* (1 - self.baseline_weight)
+            
+    def save(self,epoch, path):
+        if os.path.isfile(path+'policy_checkpoint.pth'):
+            os.remove(path+'policy_checkpoint.pth')        
+        torch.save({                        
+                    'epoch': epoch,
+                    'baseline': self.baseline,
+                    'optimizer': self.optimizer.state_dict(),
+                    'model_state_dict':self.controller.state_dict(),
+                        }, path+'policy_checkpoint.pth')
+        
+    def load(self, path):
+        checkpoint = torch.load(path+'policy_checkpoint.pth')
+        self.optimizer.load_state_dict(checkpoint['optimizer'])   
+        self.controller.load_state_dict(checkpoint['model_state_dict']) 
+        self.baseline = checkpoint['baseline']
+        
+        return checkpoint['epoch']+1
     
     def clip(self, actions_importance):
         lower = torch.ones_like(actions_importance).to(self.device) * (1 - self.clip_epsilon)

@@ -10,13 +10,13 @@ Unofficial [AWS AutoAugment](https://arxiv.org/abs/2009.14737) implementation in
 
 ## To-do
 ### Essentials
-- [x] baseline structure
-- [x] augmentation list
-- [x] shared policy
-- [x] augmentation-wise shared model weights
-- [x] PPO+baseline trick
-- [x] search code
-- [x] training code
+- [x] Baseline structure
+- [x] Augmentation list
+- [x] Shared policy
+- [x] Augmentation-wise shared model weights
+- [x] PPO + baseline trick
+- [x] Search code
+- [x] Training code
 - [x] Enlarge Batch (EB)
 - [ ] CIFAR100 WRN 
 - [ ] CIFAR100 Shake-Shake
@@ -24,6 +24,8 @@ Unofficial [AWS AutoAugment](https://arxiv.org/abs/2009.14737) implementation in
 
 ### Possible Modification
 - [ ] Faster action recorder with pickle (currently using txt)
+- [ ] Distributed training (currently using nn.DataParallel)
+- [ ] Search with EB
 - [ ] Random Search
 - [ ] Policy Gradient
 - [ ] Stocastic Depth 
@@ -37,11 +39,11 @@ Unofficial [AWS AutoAugment](https://arxiv.org/abs/2009.14737) implementation in
 - [ ] Gradient-basedNAS + AWS
 
 ## Results
+
+### CIFAR 100
+
+Search : **150 GPU Hours**, WResNet-28-10 on Reduced CIFAR100
 <!---
-### CIFAR-10 / 100
-
-Search : **3.5 GPU Hours (1428x faster than AutoAugment)**, WResNet-40x2 on Reduced CIFAR-10
-
 | Model(CIFAR-10)         | Baseline   | Cutout     | AutoAugment | Fast AutoAugment<br/>(transfer/direct) |   |
 |-------------------------|------------|------------|-------------|------------------|----|
 | Wide-ResNet-40-2        | 5.3        | 4.1        | 3.7         | 3.6 / 3.7        | [Download](https://arena.kakaocdn.net/brainrepo/fast-autoaugment/cifar10_wresnet40x2_top1_3.52.pth) |

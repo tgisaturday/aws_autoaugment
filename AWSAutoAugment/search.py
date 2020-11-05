@@ -53,7 +53,6 @@ logger = get_logger('AWS AutoAugment')
 parser = argparse.ArgumentParser()
 parser.add_argument('--path', type=str, default='./results')
 parser.add_argument('--dataroot', type=str, default='./data')
-parser.add_argument('--gpu', help='gpu available', default='0,1,2,3')
 parser.add_argument('--resume', action='store_true')
 parser.add_argument('--checkpoint',type=str)
 parser.add_argument('--manual_seed', default=0, type=int)
@@ -216,15 +215,20 @@ if __name__ == '__main__':
     else:
         device = torch.device('cpu')
         
-    os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
-    os.makedirs(args.path, exist_ok=True)
+    args.num_gpu = torch.cuda.device_count()
+    
     shared_weights = get_model(args.conf, num_class(args.dataset))
     
+    if args.num_gpu > 1:
+         shared_weights = nn.DataParallel(shared_weights)  
+            
     betas = (args.policy_adam_beta1, args.policy_adam_beta2)    
     policy = PPO(args.policy_lr, betas, args.policy_clip_epsilon, 
                             args.policy_entropy_weight,args.policy_embedding_size, 
                             args.policy_hidden_size, args.baseline_ema_weight, device)
+    
     controller = policy.controller
+            
     memory = Memory(args.action_path)
     #uniform sampling for shared policy
     actions_p = torch.FloatTensor([1/(36*36) for i in range(36*36)])
@@ -233,25 +237,35 @@ if __name__ == '__main__':
     #set init_lr to warmup_lr
     args.init_lr = args.warmup_lr
     
+    policy_start = 0
     if args.resume:
-        logger.info('Loading pretrained shared weights')
+        logger.info('Loading pretrained shared weights.')
         checkpoint = torch.load(args.path+'shared_weights.pth')
-        shared_weights.load_state_dict(checkpoint['model_state_dict'])  
-
+        if args.num_gpu > 1:
+            shared_weights.module.load_state_dict(checkpoint['model_state_dict'])             
+        else:
+            shared_weights.load_state_dict(checkpoint['model_state_dict'])  
+        
+        try:
+            policy_start = policy.load(args.path)
+        except:
+            logger.info('Policy checkpoint not found.')            
     else:
         # stage 1 training to get aws with uniform sampling
         shared_weights, result = train_and_eval(args, shared_weights, args.warmup_epochs, (subpolicies_probs,subpolicies,memory), test_ratio=0.2, cv_fold=0, shared=True)
         logger.info('[Stage 1 top1-valid: %3f', result['top1_valid'])
         logger.info('[Stage 1 top1-test: %3f', result['top1_test'])
-        torch.save({'model_state_dict':shared_weights.state_dict()}, args.path+'shared_weights.pth')
-        
+        if args.num_gpu > 1:
+            torch.save({'model_state_dict':shared_weights.module.state_dict()}, args.path+'shared_weights.pth')
+        else:
+            torch.save({'model_state_dict':shared_weights.state_dict()}, args.path+'shared_weights.pth')       
     memory.reset()
     
     #set init_lr to finetune_lr
     args.init_lr = args.finetune_lr
     
     #stage 2 policy update with PPO
-    for t in range(args.policy_steps):
+    for t in range(policy_start, args.policy_steps):
 
         curr_weights = copy.deepcopy(shared_weights)
         policy_fp = open(args.policy_path, 'a')
@@ -287,6 +301,7 @@ if __name__ == '__main__':
             print('Controller: Epoch %d / %d: new_acc: %3f baseline: %3f' % (t+1, args.policy_steps,new_acc, baseline), file=policy_fp) 
         action_index = memory.dump()
         policy.update(new_acc, action_index)
+        policy.save(t, args.path)
         policy_fp.close()  
         memory.reset()
         
@@ -303,4 +318,5 @@ if __name__ == '__main__':
         print('({}, {}, {})'.format(subpolicy[0],subpolicy[1], subpolicy[2]), file=result_fp)         
     policy_fp.close()
     result_fp.close()
+
     torch.save({'model_state_dict':controller.state_dict()}, args.path+'policy_controller.pth')        
