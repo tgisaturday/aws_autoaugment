@@ -42,7 +42,7 @@ Unofficial [AWS AutoAugment](https://arxiv.org/abs/2009.14737) implementation in
 
 ### CIFAR 100
 
-Search : **150 GPU Hours**, WResNet-28-10 on CIFAR100
+Search : **150 ~ 240 GPU Hours**, WResNet-28-10 on CIFAR100 
 <!---
 | Model(CIFAR-10)         | Baseline   | Cutout     | AutoAugment | Fast AutoAugment<br/>(transfer/direct) |   |
 |-------------------------|------------|------------|-------------|------------------|----|
