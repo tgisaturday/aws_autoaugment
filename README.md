@@ -72,14 +72,19 @@ We conducted experiments under
 ### Search a augmentation policy
 
 ```
-$ python AWSAutoAugment/search.py --path --dataroot ...
+$ python AWSAutoAugment/search.py --path ... --dataroot ...
 ```
 
 ### Train a model with found policies
 
 ```
-$ python AWSAutoAugment/train.py --path --dataroot ... --policy_checkpoint ...
+$ python AWSAutoAugment/train.py --path ... --dataroot ... --policy_checkpoint ... 
 
+$ python AWSAutoAugment/train.py --path ... --dataroot ... --policy_checkpoint ... --model wresnet28_10
+
+$ python AWSAutoAugment/train.py --path ... --dataroot ... --policy_checkpoint ... --model shakeshake26_2x32d --batch_size 128 --n_epochs 1800 --init_lr 0.01 --weight_decay 0.001
+
+$ python AWSAutoAugment/train.py --path ... --dataroot ... --policy_checkpoint ... --model pyramid --batch_size 64 --n_epochs 1800 --init_lr 0.05 --weight_decay 0.00005
 ```
 
 ## References & Opensources
@@ -92,7 +97,5 @@ We increase the batch size and adapt the learning rate accordingly to boost the 
 - **Shake-Shake** : [code](https://github.com/owruby/shake-shake_pytorch)
 - **ShakeDrop Regularization** : [paper](https://arxiv.org/abs/1802.02375), [code](https://github.com/owruby/shake-drop_pytorch)
 - **AutoAugment** : [code](https://github.com/tensorflow/models/tree/master/research/autoaugment)
-- **Ray** : [code](https://github.com/ray-project/ray)
-- **HyperOpt** : [code](https://github.com/hyperopt/hyperopt)
 - **Fast AutoAugment** : [code](https://github.com/kakaobrain/fast-autoaugment)
 - **NASNet** : [code](https://github.com/MarSaKi/nasnet)

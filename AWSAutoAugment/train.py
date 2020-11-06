@@ -75,7 +75,7 @@ parser.add_argument('--enlarge_batch_size',type=int, default=8)
 
 
 parser.add_argument('--dataset', type=str, default='cifar100', choices=['cifar10', 'cifar100','imagenet'])
-parser.add_argument('--model', type=str, default='wresnet28_10', choices=['wresnet28_10'])
+parser.add_argument('--model', type=str, default='wresnet28_10', choices=['wresnet28_10','shakeshake26_2x32d','pyramid'])
 parser.add_argument('--batch_size', type=int, default=256)
 parser.add_argument('--valid_size', type=int, default=10000)
 
@@ -272,12 +272,21 @@ if __name__ == '__main__':
     
     if not os.path.isdir(args.path):
         os.makedirs(args.path)
+    if args.model == 'pyramid':
+        args.conf = {
+            'type': args.model,
+            'dataset': args.dataset,
+            #for pyramid+shakedrop
+            'depth': 272
+            'alpha': 200
+            'bottleneck': True       
+        } 
+    else:
+        args.conf = {
+            'type': args.model,
+            'dataset': args.dataset  
+        }         
         
-    args.conf = {
-        'type': args.model,
-        'dataset': args.dataset,
-    }    
-         
     torch.manual_seed(args.manual_seed)
     np.random.seed(args.manual_seed)   
     if torch.cuda.is_available():
