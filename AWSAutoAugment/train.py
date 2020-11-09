@@ -277,8 +277,8 @@ if __name__ == '__main__':
             'type': args.model,
             'dataset': args.dataset,
             #for pyramid+shakedrop
-            'depth': 272
-            'alpha': 200
+            'depth': 272,
+            'alpha': 200,
             'bottleneck': True       
         } 
     else:
