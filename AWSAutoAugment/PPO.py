@@ -25,7 +25,7 @@ class PPO(object):
         self.baseline = None
         self.baseline_weight = baseline_weight
         
-    def update(self, acc, action_index):
+    def update(self, acc):
        
         if self.baseline == None:
             self.baseline = acc 
@@ -33,8 +33,7 @@ class PPO(object):
         else:
             self.baseline = self.baseline * self.baseline_weight + acc* (1 - self.baseline_weight)   
             
-        loss = 0
-        actions_p, actions_log_p = self.controller.get_p(action_index)               
+        actions_p, actions_log_p = self.controller.distribution()           
         loss = self.cal_loss(actions_p, actions_log_p, acc)
         self.optimizer.zero_grad()
         loss.backward()

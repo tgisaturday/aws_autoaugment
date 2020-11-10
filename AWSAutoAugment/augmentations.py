@@ -321,7 +321,6 @@ class AWSAugmentation(object):
     def __init__(self, policy):
         self.policy_p = policy[0]
         self.policies = policy[1]
-        self.memory = policy[2]
         
         #force sum of policy probs under 1.0 by normalizing to fit np.random.multimomial
         if np.sum(self.policy_p[:-1]) > 1.0:
@@ -332,7 +331,6 @@ class AWSAugmentation(object):
         policy_p = self.policy_p
         rng = np.random.default_rng()        
         action_index = np.argmax(rng.multinomial(1, policy_p))
-        self.memory.add(action_index)
         policy = self.policies[action_index]
         augment_fn1 = policy[0][0]
         mag1 = policy[0][1]
@@ -346,7 +344,6 @@ class EB_AWSAugmentation(object):
     def __init__(self, policy, M, cutout):
         self.policy_p = policy[0]
         self.policies = policy[1]
-        self.memory = policy[2]
         self.cutout = cutout
         self.M = M
         #force sum of policy probs under 1.0 by normalizing to fit np.random.multimomial
@@ -363,7 +360,6 @@ class EB_AWSAugmentation(object):
         for i in range(M):
             rng = np.random.default_rng()        
             action_index = np.argmax(rng.multinomial(1, policy_p))
-            self.memory.add(action_index)
             #enables sampling without replacement
             policy_p[action_index] = 0.0
             policy = self.policies[action_index]
