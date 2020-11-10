@@ -291,9 +291,8 @@ if __name__ == '__main__':
         
         logger.info('-----------------------------------')
         print('-----------------------------------', file=policy_fp)
-        
-        policy_loss = policy.update(new_acc)        
-        baseline = policy.baseline               
+        baseline = policy.baseline              
+        policy_loss = policy.update(new_acc)               
         logger.info('loss: %3f, new_acc: %3f baseline: %3f' % (policy_loss, new_acc, baseline))  
         print('loss: %3f, new_acc: %3f baseline: %3f' % (policy_loss, new_acc, baseline), file=policy_fp)                       
 

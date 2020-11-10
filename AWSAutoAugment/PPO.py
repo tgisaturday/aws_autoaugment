@@ -22,22 +22,18 @@ class PPO(object):
         self.controller = Controller(embedding_size, hidden_size, device).to(device)
         self.optimizer = torch.optim.Adam(params=self.controller.parameters(), lr=self.lr, betas = self.betas)
         self.device = device
-        self.baseline = None
+        self.baseline = 0.0
         self.baseline_weight = baseline_weight
         
     def update(self, acc):
-       
-        if self.baseline == None:
-            self.baseline = acc 
-                  
-        else:
-            self.baseline = self.baseline * self.baseline_weight + acc* (1 - self.baseline_weight)   
-            
-        actions_p, actions_log_p = self.controller.distribution()           
+        actions_p, actions_log_p = self.controller.distribution()   
         loss = self.cal_loss(actions_p, actions_log_p, acc)
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step() 
+        
+        self.baseline = self.baseline * self.baseline_weight + acc* (1 - self.baseline_weight)   
+            
         
         return loss
 
