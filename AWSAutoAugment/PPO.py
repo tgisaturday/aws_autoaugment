@@ -25,18 +25,24 @@ class PPO(object):
         self.baseline = None
         self.baseline_weight = baseline_weight
         
-    def update(self, acc, action_index): 
-        actions_p, actions_log_p = self.controller.get_p(action_index)          
+    def update(self, acc, action_index):
+       
         if self.baseline == None:
-            self.baseline = acc            
-        
+            self.baseline = acc 
+                  
         else:
-            loss = self.cal_loss(actions_p, actions_log_p, acc)
-            self.optimizer.zero_grad()
-            loss.backward()
-            self.optimizer.step()            
-            #update baseline for next step
-            self.baseline = self.baseline * self.baseline_weight + acc* (1 - self.baseline_weight)
+            self.baseline = self.baseline * self.baseline_weight + acc* (1 - self.baseline_weight)   
+            
+        loss = 0
+        actions_p, actions_log_p = self.controller.get_p(action_index)               
+        loss = self.cal_loss(actions_p, actions_log_p, acc)
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step() 
+        
+        return loss
+
+
             
     def save(self,epoch, path):
         if os.path.isfile(path+'policy_checkpoint.pth'):

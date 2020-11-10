@@ -292,19 +292,20 @@ if __name__ == '__main__':
         
         logger.info('-----------------------------------')
         print('-----------------------------------', file=policy_fp)
-        if policy.baseline == None:
-            logger.info('Controller: Epoch %d / %d: new_acc: %3f baseline: None' % (t+1, args.policy_steps,new_acc))  
-            print('Controller: Epoch %d / %d: new_acc: %3f baseline: None' % (t+1, args.policy_steps,new_acc), file=policy_fp)               
-        else:
-            baseline = policy.baseline           
-            logger.info('Controller: Epoch %d / %d: new_acc: %3f baseline: %3f' % (t+1, args.policy_steps,new_acc, baseline))  
-            print('Controller: Epoch %d / %d: new_acc: %3f baseline: %3f' % (t+1, args.policy_steps,new_acc, baseline), file=policy_fp) 
-        action_index = memory.dump()
-        policy.update(new_acc, action_index)
+        
+
+        action_index = memory.dump()            
+        policy_loss = policy.update(new_acc, action_index)
+        baseline = policy.baseline               
+        logger.info('Controller: Epoch %d / %d: loss: %3f, new_acc: %3f baseline: %3f' % (t+1, args.policy_steps,policy_loss, new_acc, baseline))  
+        print('Controller: Epoch %d / %d: loss: %3f, new_acc: %3f baseline: %3f' % (t+1, args.policy_steps,policy_loss, new_acc, baseline), file=policy_fp)                       
+
         policy.save(t, args.path)
         policy_fp.close()  
         memory.reset()
         
+        logger.info('-----------------------------------')
+        print('-----------------------------------', file=policy_fp)       
     logger.info('Best policies found.')  
     policy_fp = open(args.policy_path, 'a')
     result_fp = open(args.result_path, 'w')    
