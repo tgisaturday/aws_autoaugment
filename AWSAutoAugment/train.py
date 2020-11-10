@@ -20,7 +20,7 @@ from common import get_logger, add_filehandler
 from data import get_dataloaders
 from metrics import *
 from networks import get_model, num_class
-from PPO import Controller
+from PPO import LSTMController, FCNController
 
 
 class Memory:
@@ -64,6 +64,7 @@ parser.add_argument('--checkpoint',type=str)
 parser.add_argument('--manual_seed', default=0, type=int)
 
 parser.add_argument('--policy_checkpoint', type=str)
+parser.add_argument('--policy_controller_type', type=str, default='lstm', choices=['lstm','fcn'])
 """ run config """
 parser.add_argument('--init_lr', type=float, default=0.4)
 parser.add_argument('--n_epochs', type=int, default=300)
@@ -305,7 +306,12 @@ if __name__ == '__main__':
     memory = Memory(args.action_path)
     
     #load learned policy    
-    controller = Controller(args.policy_embedding_size, args.policy_hidden_size, device).to(device)
+    if args.policy_controller_type =='lstm':
+        controller = LSTMController(args.policy_embedding_size, args.policy_hidden_size, device).to(device)
+    elif controller_type == 'fcn':
+        controller = FCNController(args.policy_embedding_size, args.policy_hidden_size, device).to(device)   
+    else:
+        raise TypeError('Unsupported controller type: ' % controller_type)        
     controller_checkpoint = torch.load(args.policy_checkpoint)
     controller.load_state_dict(controller_checkpoint['model_state_dict'])    
     actions_p, actions_log_p = controller.distribution()

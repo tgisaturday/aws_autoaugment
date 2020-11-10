@@ -59,8 +59,8 @@ parser.add_argument('--policy_steps', type=int, default=800)
 
 """ policy hyper-parameters """
 parser.add_argument('--policy_init_type', type=str, default='uniform', choices=['normal', 'uniform'])
+parser.add_argument('--policy_controller_type', type=str, default='lstm', choices=['lstm','fcn'])
 parser.add_argument('--policy_opt_type', type=str, default='adam', choices=['adam'])
-parser.add_argument('--policy_batch_size', type=int, default=5)
 parser.add_argument('--policy_lr', type=float, default=0.1)
 
 parser.add_argument('--policy_adam_beta1', type=float, default=0.5)  # arch_opt_param
@@ -189,7 +189,8 @@ if __name__ == '__main__':
     betas = (args.policy_adam_beta1, args.policy_adam_beta2)    
     policy = PPO(args.policy_lr, betas, args.policy_clip_epsilon, 
                             args.policy_entropy_weight,args.policy_embedding_size, 
-                            args.policy_hidden_size, args.baseline_ema_weight, device)
+                            args.policy_hidden_size, args.baseline_ema_weight, 
+                            args.policy_init_type, args.policy_controller_type, device)
     
     controller = policy.controller
     

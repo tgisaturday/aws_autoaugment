@@ -2,6 +2,7 @@
 import os
 import torch
 import torch.nn as nn
+import copy
 from torch.distributions import Categorical
 
 import torch.nn.functional as F
@@ -14,26 +15,41 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
         
 class PPO(object):
-    def __init__(self, lr, betas, clip_epsilon, entropy_weight,embedding_size, hidden_size, baseline_weight, device):
+    def __init__(self, lr, betas, clip_epsilon, entropy_weight,embedding_size, hidden_size, baseline_weight,
+                 init_type, controller_type, device):
         self.lr = lr
         self.betas = betas
         self.clip_epsilon = clip_epsilon
-        self.entropy_weight = entropy_weight    
-        self.controller = Controller(embedding_size, hidden_size, device).to(device)
+        self.entropy_weight = entropy_weight   
+        if controller_type == 'lstm':
+            self.controller = LSTMController(embedding_size, hidden_size, device, init_type).to(device)
+        elif controller_type == 'fcn':
+            self.controller = FCNController(embedding_size, hidden_size, device, init_type).to(device) 
+        else:
+            raise TypeError('Unsupported controller type: ' % controller_type)
         self.optimizer = torch.optim.Adam(params=self.controller.parameters(), lr=self.lr, betas = self.betas)
         self.device = device
         self.baseline = 0.0
         self.baseline_weight = baseline_weight
-        
+        self.actions_p_old = torch.FloatTensor([1/(36*36) for i in range(36*36)]).to(device)
+    
     def update(self, acc):
-        actions_p, actions_log_p = self.controller.distribution()   
+        actions_p, actions_log_p = self.controller.distribution()  
         loss = self.cal_loss(actions_p, actions_log_p, acc)
+            
+        #update baseline for next time
+        if self.baseline == 0.0:
+            self.baseline = acc
+        else:
+            self.baseline = self.baseline * self.baseline_weight + acc* (1 - self.baseline_weight)
+            
+        #update actions_p_old for next time   
+        self.actions_p_old = actions_p.clone().detach()
+        
+        #update policy 
         self.optimizer.zero_grad()
         loss.backward()
-        self.optimizer.step() 
-        
-        self.baseline = self.baseline * self.baseline_weight + acc* (1 - self.baseline_weight)   
-            
+        self.optimizer.step()     
         
         return loss
 
@@ -66,8 +82,8 @@ class PPO(object):
 
         return actions_importance   
     
-    def cal_loss(self, actions_p, actions_log_p, acc):
-        actions_importance = actions_p
+    def cal_loss(self, actions_p, actions_log_p, acc):      
+        actions_importance = actions_p / self.actions_p_old
         clipped_actions_importance = self.clip(actions_importance)
         reward = acc - self.baseline
         actions_reward = actions_importance * reward
@@ -81,9 +97,75 @@ class PPO(object):
         return policy_loss + entropy_bonus
     
         
-class Controller(nn.Module):
-    def __init__(self, embedding_size, hidden_size, device):
-        super(Controller, self).__init__()        
+class LSTMController(nn.Module):
+    def __init__(self, embedding_size, hidden_size, device, init_type = 'uniform'):
+        super(LSTMController, self).__init__()        
+        self.embedding_size = embedding_size
+        self.hidden_size = hidden_size
+        self.len_OPS = 36 * 36 #number of operation candidates
+        self.device = device       
+        self.embedding = nn.Embedding(self.len_OPS, self.embedding_size)   
+        self.lstm = nn.LSTMCell(self.embedding_size, self.hidden_size)
+        self.decoder = nn.Linear(self.hidden_size, 1)
+        self.sum_actions_p = None
+        if init_type == 'uniform':
+            self.init_parameters()
+        
+    def forward(self, input, h_t, c_t):
+        input = self.embedding(input)
+        h_t, c_t = self.lstm(input)
+        logits = self.decoder(h_t)
+
+        return h_t, c_t, logits
+    
+    def distribution(self):
+        actions_p = []
+        actions_log_p = []
+        h_t, c_t = self.init_hidden()        
+        for i in range(self.len_OPS):
+            input = torch.LongTensor([i]).to(self.device)
+            h_t, c_t, logits = self.forward(input,h_t,c_t)
+            p = torch.sigmoid(logits)
+            actions_p.append(p)
+        actions_p = torch.cat(actions_p)
+        self.sum_actions_p = torch.sum(actions_p)   
+        actions_p = torch.div(actions_p, self.sum_actions_p)
+        actions_log_p = torch.log(actions_p)
+        
+        return actions_p, actions_log_p
+
+    def convert(self, actions_p):
+        operations = []
+        probs = []
+        operations_str = []
+        transformations = augment_list()
+        transformations_str = augment_list_by_name()        
+        for actions in range(self.len_OPS):
+            op1_idx = actions // 36
+            op2_idx = actions % 36 
+            prob = actions_p[actions].item()
+            probs.append(prob)
+            operations.append([transformations[op1_idx],transformations[op2_idx], prob])
+            operations_str.append([transformations_str[op1_idx],transformations_str[op2_idx],prob])            
+        return operations, operations_str, probs
+       
+
+    def init_hidden(self):
+        h_t = torch.zeros(1, self.hidden_size, dtype=torch.float, device=self.device)
+        c_t = torch.zeros(1, self.hidden_size, dtype=torch.float, device=self.device)
+
+        return (h_t, c_t)  
+    
+    def init_parameters(self):
+        init_range = 0.1
+        for param in self.parameters():
+            param.data.uniform_(-init_range, init_range)
+        self.decoder.bias.data.fill_(0)
+        
+        
+class FCNController(nn.Module):
+    def __init__(self, embedding_size, hidden_size, device, init_type = 'uniform'):
+        super(FCNController, self).__init__()        
         self.embedding_size = embedding_size
         self.hidden_size = hidden_size
         self.len_OPS = 36 * 36 #number of operation candidates
@@ -96,7 +178,9 @@ class Controller(nn.Module):
                                     nn.Tanh(),
                                     nn.Linear(self.hidden_size,1)) 
         self.sum_actions_p = None
-
+        if init_type == 'uniform':
+            self.init_parameters()
+        
     def forward(self, input):
         input = self.embedding(input)
         logits = self.policy(input)
@@ -146,5 +230,8 @@ class Controller(nn.Module):
             operations_str.append([transformations_str[op1_idx],transformations_str[op2_idx],prob])            
         return operations, operations_str, probs
        
-
+    def init_parameters(self):
+        init_range = 0.1
+        for param in self.parameters():
+            param.data.uniform_(-init_range, init_range)        
         
