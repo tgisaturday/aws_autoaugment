@@ -42,7 +42,7 @@ class PPO(object):
         
         for ppo_epoch in range(self.ppo_epochs):
             loss = self.cal_loss(actions_p_old, actions_log_p_old, acc)
-            logger.info('[policy update %03d/%03d] loss %.6f'%(ppo_epoch+1,self.ppo_epochs, loss))            
+            logger.info('[policy update %03d/%03d] loss: %.6f lr: %.6f'%(ppo_epoch+1,self.ppo_epochs, loss, self.lr))            
             #update policy 
             self.optimizer.zero_grad()
             loss.backward()
