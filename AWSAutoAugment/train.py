@@ -23,37 +23,6 @@ from networks import get_model, num_class
 from PPO import LSTMController, FCNController
 
 
-class Memory:
-    def __init__(self, path):
-        self.file = path
-        
-    def add(self, index):
-        if self.file == None:
-            return
-        fp = open(self.file, 'a')
-        print(index,file=fp)
-        fp.close()
-
-    def dump(self):
-        if self.file == None:
-            return        
-        action_index = []
-        fp = open(self.file,'r')
-        actions = fp.readlines()
-        for action in actions:
-            try:
-                action_index.append(int(action))
-            except:
-                logger.info('invalid action string, skipping')
-        return action_index
-    
-    def reset(self):
-        if self.file == None:
-            return        
-        fp = open(self.file, 'w')        
-        fp.close()
-
-
 logger = get_logger('AWS AutoAugment')
 
 parser = argparse.ArgumentParser()
@@ -173,6 +142,7 @@ def run_epoch_with_EB(model, loader, loss_fn, optimizer, max_epoch, desc_default
     if optimizer:
         metrics.metrics['lr'] = optimizer.param_groups[0]['lr']
     return metrics
+
 def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, metric='last', EB=False):
 
     max_epoch = epoch
@@ -229,9 +199,9 @@ def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, metric
             
         if result['top1_test'] > best_top1:
             best_top1 = result['top1_test']
-            log_fp = open(args.log_path, 'a')             
+       
             logger.info('Epoch {0} new best top1: {1:03f}'.format(epoch+1,best_top1))
-            print('Epoch {0} new best top1: {1:03f}'.format(epoch+1,best_top1), file=log_fp)       
+    
 
             if os.path.isfile(args.path+'best_weight.pth'):
                 os.remove(args.path+'best_weight.pth')
@@ -251,8 +221,7 @@ def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, metric
                         }, args.path+'/best_weight.pth') 
             
             logger.info('Saving models to {}'.format(args.path+'best_weight.pth'))
-            print('Saving models to {}'.format(args.path+'best_weight.pth'), file=log_fp)     
-            log_fp.close()
+    
         #save checkpoint    
         torch.save({                        
                     'epoch': epoch,
@@ -268,11 +237,13 @@ def train_and_eval(args, model, epoch, policy, test_ratio=0.0, cv_fold=0, metric
 if __name__ == '__main__':
     args = parser.parse_args()
     args.path = args.path+'/'+args.dataset+'/'+args.model+'/'
-    args.action_path = None
     args.log_path = args.path+'/logs.txt'    
+
     
     if not os.path.isdir(args.path):
         os.makedirs(args.path)
+    add_filehandler(logger, args.log_path )   
+    
     if args.model == 'pyramid':
         args.conf = {
             'type': args.model,
@@ -286,7 +257,7 @@ if __name__ == '__main__':
         args.conf = {
             'type': args.model,
             'dataset': args.dataset  
-        }         
+        }    
         
     torch.manual_seed(args.manual_seed)
     np.random.seed(args.manual_seed)   
@@ -302,9 +273,7 @@ if __name__ == '__main__':
     model = get_model(args.conf, num_class(args.dataset))
     if args.num_gpu > 1:
          model = nn.DataParallel(model)  
-            
-    memory = Memory(args.action_path)
-    
+                
     #load learned policy    
     if args.policy_controller_type =='lstm':
         controller = LSTMController(args.policy_embedding_size, args.policy_hidden_size, device).to(device)
@@ -319,17 +288,14 @@ if __name__ == '__main__':
     
     subpolicies_str.sort(key = lambda subpolices_str: subpolices_str[2], reverse=True)
     del controller
-    log_fp = open(args.log_path, 'a')    
     logger.info('------ Learned Policy with AWS Augment ------')
-    print('------ Learned Policy with AWS Augment ------', file=log_fp)    
+ 
     for i, subpolicy in enumerate(subpolicies_str):
         if subpolicy[2] > 1e-6:
             logger.info('# Sub-policy {0}: {1}, {2} {3:06f}'.format(i+1, subpolicy[0],subpolicy[1],subpolicy[2]))
-            print('# Sub-policy {0}: {1}, {2} {3:06f}'.format(i+1, subpolicy[0],subpolicy[1],subpolicy[2]), file=log_fp)
-    log_fp.close()   
     
 
-    best_top1 = train_and_eval(args, model, args.n_epochs, (subpolicies_probs,subpolicies,memory), EB = args.enlarge_batch)
+    best_top1 = train_and_eval(args, model, args.n_epochs, (subpolicies_probs,subpolicies), EB = args.enlarge_batch)
     logger.info('[Best top1-test: {0:06f}'.format(best_top1))
 
         

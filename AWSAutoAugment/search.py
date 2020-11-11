@@ -56,7 +56,7 @@ parser.add_argument('--policy_algo', type=str, default='rl', choices=['rl'])
 parser.add_argument('--warmup_epochs', type=int, default=200)
 parser.add_argument('--finetune_epochs', type=int, default=10)
 parser.add_argument('--policy_steps', type=int, default=800)
-
+parser.add_argument('--policy_update_epochs', type=int, default=1)
 """ policy hyper-parameters """
 parser.add_argument('--policy_init_type', type=str, default='uniform', choices=['normal', 'uniform'])
 parser.add_argument('--policy_controller_type', type=str, default='lstm', choices=['lstm','fcn'])
@@ -156,9 +156,7 @@ def train_and_eval(args, model, optimizer,scheduler, epoch_start, max_epoch, pol
 if __name__ == '__main__':
     args = parser.parse_args()
     args.path = args.path+'/'+args.dataset+'/'+args.model+'/'
-    args.action_path = args.path+'/action_logs.txt'
     args.policy_path = args.path+'/policy_logs.txt'
-    args.result_path = args.path+'/policy_found.txt'
     if not os.path.isdir(args.path):
         os.makedirs(args.path)
         
@@ -166,7 +164,8 @@ if __name__ == '__main__':
         'type': args.model,
         'dataset': args.dataset,
     }    
-         
+    add_filehandler(logger, args.policy_path)  
+    
     torch.manual_seed(args.manual_seed)
     np.random.seed(args.manual_seed)   
     if torch.cuda.is_available():
@@ -187,7 +186,7 @@ if __name__ == '__main__':
          shared_weights = nn.DataParallel(shared_weights)  
             
     betas = (args.policy_adam_beta1, args.policy_adam_beta2)    
-    policy = PPO(args.policy_lr, betas, args.policy_clip_epsilon, 
+    policy = PPO(args.policy_lr, args.policy_update_epochs, betas, args.policy_clip_epsilon, 
                             args.policy_entropy_weight,args.policy_embedding_size, 
                             args.policy_hidden_size, args.baseline_ema_weight, 
                             args.policy_init_type, args.policy_controller_type, device)
@@ -264,9 +263,7 @@ if __name__ == '__main__':
         optimizer.load_state_dict(checkpoint['optimizer'])                
         scheduler.load_state_dict(checkpoint['scheduler'])     
         
-        policy_fp = open(args.policy_path, 'a')
         logger.info('Controller: Epoch %d / %d' % (t+1, args.policy_steps))
-        print('-----Controller: Epoch %d / %d-----' % (t+1, args.policy_steps), file=policy_fp)
         
         actions_p, actions_log_p = controller.distribution()
         subpolicies, subpolicies_str, subpolicies_probs  = controller.convert(actions_p)
@@ -274,44 +271,36 @@ if __name__ == '__main__':
         subpolicies_str.sort(key = lambda subpolices_str: subpolices_str[2], reverse=True)
         for i, subpolicy in enumerate(subpolicies_str[:args.policy_subpolices]):
             logger.info('# Sub-policy {0}: {1}, {2} {3:06f}'.format(i+1, subpolicy[0],subpolicy[1],subpolicy[2]))
-            print('# Sub-policy {0}: {1}, {2} {3:06f}'.format(i+1, subpolicy[0],subpolicy[1],subpolicy[2]), file=policy_fp) 
+
             
         logger.info('...')
-        print('...', file=policy_fp) 
+
                   
         for i, subpolicy in enumerate(subpolicies_str[len(subpolicies_str)-args.policy_subpolices:]):
             logger.info('# Sub-policy {0}: {1}, {2} {3:06f}'.format(i+len(subpolicies_str)-args.policy_subpolices+1,
                                                                     subpolicy[0],subpolicy[1],subpolicy[2]))
-            print('# Sub-policy {0}: {1}, {2} {3:06f}'.format(i+len(subpolicies_str)-args.policy_subpolices+1,
-                                                              subpolicy[0],subpolicy[1],subpolicy[2]), file=policy_fp)   
+
             
         result = train_and_eval(args, curr_weights,optimizer,scheduler,
                                 args.warmup_epochs, args.epochs,(subpolicies_probs,subpolicies), test_ratio=0.2, cv_fold=0)
 
         new_acc = result['top1_valid']
         
-        logger.info('-----------------------------------')
-        print('-----------------------------------', file=policy_fp)
+        logger.info('---------------------------------------------------------')
+
         baseline = policy.baseline              
         policy_loss = policy.update(new_acc)               
         logger.info('loss: %3f, new_acc: %3f baseline: %3f' % (policy_loss, new_acc, baseline))  
-        print('loss: %3f, new_acc: %3f baseline: %3f' % (policy_loss, new_acc, baseline), file=policy_fp)                       
+        logger.info('---------------------------------------------------------')                   
 
         policy.save(t, args.path)
-        policy_fp.close()  
     
-    logger.info('Best policies found.')  
-    policy_fp = open(args.policy_path, 'a')
-    result_fp = open(args.result_path, 'w')    
-    print('------- Best Policies Found -------', file=policy_fp)
+    logger.info('Best policies found.')    
+
     actions_p, actions_log_p = controller.distribution()    
     subpolicies, subpolicies_str, subpolicies_probs  = controller.convert(actions_p)    
     subpolicies_str.sort(key = lambda subpolices_str: subpolices_str[2], reverse=True)
     for i, subpolicy in enumerate(subpolicies_str):
         logger.info('# Sub-policy {0}: {1}, {2} {3:06f}'.format(i+1,  subpolicy[0],subpolicy[1],subpolicy[2]))
-        print('# Sub-policy {0}: {1}, {2} {3:06f}'.format(i+1,  subpolicy[0],subpolicy[1],subpolicy[2]), file=policy_fp)   
-        print('({}, {}, {})'.format(subpolicy[0],subpolicy[1], subpolicy[2]), file=result_fp)         
-    policy_fp.close()
-    result_fp.close()
 
     torch.save({'model_state_dict':controller.state_dict()}, args.path+'policy_controller.pth')        

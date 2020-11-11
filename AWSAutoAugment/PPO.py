@@ -6,16 +6,19 @@ import copy
 from torch.distributions import Categorical
 
 import torch.nn.functional as F
-
+import logging
 from torch.autograd import Variable
 
 from augmentations import augment_list, augment_list_by_name
+from common import get_logger
+
+logger = get_logger('AWS AutoAugment')
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
         
 class PPO(object):
-    def __init__(self, lr, betas, clip_epsilon, entropy_weight,embedding_size, hidden_size, baseline_weight,
+    def __init__(self, lr, ppo_epochs, betas, clip_epsilon, entropy_weight,embedding_size, hidden_size, baseline_weight,
                  init_type, controller_type, device):
         self.lr = lr
         self.betas = betas
@@ -31,26 +34,25 @@ class PPO(object):
         self.device = device
         self.baseline = 0.0
         self.baseline_weight = baseline_weight
-        self.actions_p_old = torch.FloatTensor([1/(36*36) for i in range(36*36)]).to(device)
-    
+        self.ppo_epochs = ppo_epochs
     def update(self, acc):
         actions_p, actions_log_p = self.controller.distribution()  
-        loss = self.cal_loss(actions_p, actions_log_p, acc)
-            
+        actions_p_old = actions_p.clone().detach()
+        actions_log_p_old = actions_log_p.clone().detach()        
+        
+        for ppo_epoch in range(self.ppo_epochs):
+            loss = self.cal_loss(actions_p_old, actions_log_p_old, acc)
+            logger.info('[rl(%s) %03d/%03d] loss %.4f'%('ppo',ppo_epoch+1,self.ppo_epochs, loss))            
+            #update policy 
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()     
+        logger.info('---------------------------------------------------------')      
         #update baseline for next time
         if self.baseline == 0.0:
             self.baseline = acc
         else:
-            self.baseline = self.baseline * self.baseline_weight + acc* (1 - self.baseline_weight)
-            
-        #update actions_p_old for next time   
-        self.actions_p_old = actions_p.clone().detach()
-        
-        #update policy 
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()     
-        
+            self.baseline = self.baseline * self.baseline_weight + acc* (1 - self.baseline_weight)        
         return loss
 
 
@@ -82,8 +84,9 @@ class PPO(object):
 
         return actions_importance   
     
-    def cal_loss(self, actions_p, actions_log_p, acc):      
-        actions_importance = actions_p / self.actions_p_old
+    def cal_loss(self, actions_p_old, actions_log_p_old, acc):    
+        actions_p, actions_log_p = self.controller.distribution()          
+        actions_importance = actions_p / actions_p_old
         clipped_actions_importance = self.clip(actions_importance)
         reward = acc - self.baseline
         actions_reward = actions_importance * reward
