@@ -42,7 +42,7 @@ class PPO(object):
         
         for ppo_epoch in range(self.ppo_epochs):
             loss = self.cal_loss(actions_p_old, actions_log_p_old, acc)
-            logger.info('[rl(%s) %03d/%03d] loss %.4f'%('ppo',ppo_epoch+1,self.ppo_epochs, loss))            
+            logger.info('[policy update %03d/%03d] loss %.4f'%(ppo_epoch+1,self.ppo_epochs, loss))            
             #update policy 
             self.optimizer.zero_grad()
             loss.backward()
@@ -86,7 +86,7 @@ class PPO(object):
     
     def cal_loss(self, actions_p_old, actions_log_p_old, acc):    
         actions_p, actions_log_p = self.controller.distribution()          
-        actions_importance = actions_p / actions_p_old
+        actions_importance = torch.div(actions_p, actions_p_old + 1e-8)
         clipped_actions_importance = self.clip(actions_importance)
         reward = acc - self.baseline
         actions_reward = actions_importance * reward
@@ -130,10 +130,11 @@ class LSTMController(nn.Module):
             h_t, c_t, logits = self.forward(input,h_t,c_t)
             p = torch.sigmoid(logits)
             actions_p.append(p)
+
         actions_p = torch.cat(actions_p)
         self.sum_actions_p = torch.sum(actions_p)   
-        actions_p = torch.div(actions_p, self.sum_actions_p)
-        actions_log_p = torch.log(actions_p)
+        actions_p = torch.div(actions_p, self.sum_actions_p + 1e-8)
+        actions_log_p = torch.log(actions_p + 1e-8)
         
         return actions_p, actions_log_p
 
@@ -213,8 +214,8 @@ class FCNController(nn.Module):
             p = torch.sigmoid(logits)
             actions_p.append(p)
         actions_p = torch.cat(actions_p)
-        actions_p = torch.div(actions_p, self.sum_actions_p)
-        actions_log_p = torch.log(actions_p)
+        actions_p = torch.div(actions_p, self.sum_actions_p + 1e-8)
+        actions_log_p = torch.log(actions_p + 1e-8)
         
         return actions_p, actions_log_p    
     
