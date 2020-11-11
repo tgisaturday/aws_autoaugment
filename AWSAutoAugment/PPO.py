@@ -201,23 +201,10 @@ class FCNController(nn.Module):
             actions_p.append(p)
         actions_p = torch.cat(actions_p)
         self.sum_actions_p = torch.sum(actions_p)   
-        actions_p = torch.div(actions_p, self.sum_actions_p)
-        actions_log_p = torch.log(actions_p)
-        
-        return actions_p, actions_log_p
-    
-    def get_p(self, action_index):
-        actions_p = []
-        for i in action_index:
-            input = torch.LongTensor([i]).to(self.device)
-            logits = self.forward(input)
-            p = torch.sigmoid(logits)
-            actions_p.append(p)
-        actions_p = torch.cat(actions_p)
         actions_p = torch.div(actions_p, self.sum_actions_p + 1e-8)
         actions_log_p = torch.log(actions_p + 1e-8)
         
-        return actions_p, actions_log_p    
+        return actions_p, actions_log_p
     
     def convert(self, actions_p):
         operations = []
