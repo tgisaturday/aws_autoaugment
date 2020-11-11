@@ -93,11 +93,11 @@ class PPO(object):
         clipped_actions_reward = clipped_actions_importance * reward
 
         actions_reward, _ = torch.min(torch.cat([actions_reward.unsqueeze(0), clipped_actions_reward.unsqueeze(0)], dim=0), dim=0)
-        policy_loss = -1 * torch.sum(actions_reward)
-        entropy = -1 * torch.sum(actions_p * actions_log_p)
+        policy_loss = -1 * actions_reward
+        entropy = -1 * actions_p * actions_log_p
         entropy_bonus = -1 * entropy * self.entropy_weight
 
-        return policy_loss + entropy_bonus
+        return torch.mean(policy_loss) + torch.mean(entropy_bonus)
     
         
 class LSTMController(nn.Module):
