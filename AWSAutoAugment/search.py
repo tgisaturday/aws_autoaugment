@@ -56,7 +56,7 @@ parser.add_argument('--policy_algo', type=str, default='rl', choices=['rl'])
 parser.add_argument('--warmup_epochs', type=int, default=200)
 parser.add_argument('--finetune_epochs', type=int, default=10)
 parser.add_argument('--policy_steps', type=int, default=800)
-parser.add_argument('--policy_update_epochs', type=int, default=1)
+parser.add_argument('--policy_update_epochs', type=int, default=10)
 """ policy hyper-parameters """
 parser.add_argument('--policy_init_type', type=str, default='uniform', choices=['normal', 'uniform'])
 parser.add_argument('--policy_controller_type', type=str, default='lstm', choices=['lstm','fcn'])
