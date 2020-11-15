@@ -44,12 +44,22 @@ Unofficial [AWS AutoAugment](https://arxiv.org/abs/2009.14737) implementation in
 
 Search : **150 ~ 240 GPU Hours**, WResNet-28-10 on CIFAR100 
 
+- Searched with cutout after AWSAugment
 
 | Model(CIFAR-100)      | Baseline   | Cutout     | AWSAugment  |   AWS + EB |
 |-----------------------|------------|------------|-------------|------------|
 | Wide-ResNet-28-10     |     -      |     -      |      -      |     -      | 
 | Shake-Shake(26 2x32d) |     -      |     -      |      -      |     -      | 
 | PyramidNet+ShakeDrop  |     -      |     -      |      -      |     -      | 
+
+- Searched without cutout
+
+| Model(CIFAR-100)      | Baseline   | Cutout     | AWSAugment  |   AWS + EB |
+|-----------------------|------------|------------|-------------|------------|
+| Wide-ResNet-28-10     |     -      |     -      |      -      |     -      | 
+| Shake-Shake(26 2x32d) |     -      |     -      |      -      |     -      | 
+| PyramidNet+ShakeDrop  |     -      |     -      |      -      |     -      | 
+
 ## Run
 
 We conducted experiments under
