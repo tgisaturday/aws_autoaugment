@@ -101,7 +101,7 @@ $ python AWSAutoAugment/train.py --path ... --dataroot ... --policy_checkpoint .
 $ python AWSAutoAugment/train.py --path ... --dataroot ... --policy_checkpoint ... --model pyramid --batch_size 64 --n_epochs 1800 --init_lr 0.05 --weight_decay 0.00005
 
 $ python AWSAutoAugment/train.py --path ... --dataroot ... --policy_checkpoint ... --model pyramid --batch_size 64 --n_epochs 1800 --init_lr 0.05 --weight_decay 0.00005 --enlarge_batch
-
+```
 
 ## References & Opensources
 
