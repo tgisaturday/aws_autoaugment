@@ -78,29 +78,29 @@ $ python AWSAutoAugment/search.py --path ... --dataroot ...
 ```
 $ python AWSAutoAugment/train.py --path ... --dataroot ... --policy_checkpoint ... 
 
-$ python AWSAutoAugment/train.py --path ... --dataroot ... --policy_checkpoint conf/cifar100_policy.pth --model wresnet28_10 --no_aug --cutout 0
+$ python AWSAutoAugment/train.py --path ... --dataroot ... --policy_checkpoint ... --model wresnet28_10 --no_aug --cutout 0
 
-$ python AWSAutoAugment/train.py --path ... --dataroot ... --policy_checkpoint conf/cifar100_policy.pth --model wresnet28_10 --no_aug --cutout 16
+$ python AWSAutoAugment/train.py --path ... --dataroot ... --policy_checkpoint ... --model wresnet28_10 --no_aug --cutout 16
 
-$ python AWSAutoAugment/train.py --path ... --dataroot ... --policy_checkpoint conf/cifar100_policy.pth --model wresnet28_10
+$ python AWSAutoAugment/train.py --path ... --dataroot ... --policy_checkpoint ... --model wresnet28_10
 
-$ python AWSAutoAugment/train.py --path ... --dataroot ... --policy_checkpoint conf/cifar100_policy.pth --model wresnet28_10 --enlarge_batch
+$ python AWSAutoAugment/train.py --path ... --dataroot ... --policy_checkpoint ... --model wresnet28_10 --enlarge_batch
 
-$ python AWSAutoAugment/train.py --path ... --dataroot ... --policy_checkpoint conf/cifar100_policy.pth --model shakeshake26_2x32d --batch_size 128 --n_epochs 1800 --init_lr 0.01 --weight_decay 0.001 --no_aug --cutout 0
+$ python AWSAutoAugment/train.py --path ... --dataroot ... --policy_checkpoint ... --model shakeshake26_2x32d --batch_size 128 --n_epochs 1800 --init_lr 0.01 --weight_decay 0.001 --no_aug --cutout 0
 
-$ python AWSAutoAugment/train.py --path ... --dataroot ... --policy_checkpoint conf/cifar100_policy.pth --model shakeshake26_2x32d --batch_size 128 --n_epochs 1800 --init_lr 0.01 --weight_decay 0.001 --no_aug --cutout 16
+$ python AWSAutoAugment/train.py --path ... --dataroot ... --policy_checkpoint ... --model shakeshake26_2x32d --batch_size 128 --n_epochs 1800 --init_lr 0.01 --weight_decay 0.001 --no_aug --cutout 16
 
-$ python AWSAutoAugment/train.py --path ... --dataroot ... --policy_checkpoint conf/cifar100_policy.pth --model shakeshake26_2x32d --batch_size 128 --n_epochs 1800 --init_lr 0.01 --weight_decay 0.001 
+$ python AWSAutoAugment/train.py --path ... --dataroot ... --policy_checkpoint ... --model shakeshake26_2x32d --batch_size 128 --n_epochs 1800 --init_lr 0.01 --weight_decay 0.001 
 
-$ python AWSAutoAugment/train.py --path ... --dataroot ... --policy_checkpoint conf/cifar100_policy.pth --model shakeshake26_2x32d --batch_size 128 --n_epochs 1800 --init_lr 0.01 --weight_decay 0.001 --enlarge_batch
+$ python AWSAutoAugment/train.py --path ... --dataroot ... --policy_checkpoint ... --model shakeshake26_2x32d --batch_size 128 --n_epochs 1800 --init_lr 0.01 --weight_decay 0.001 --enlarge_batch
 
-$ python AWSAutoAugment/train.py --path ... --dataroot ... --policy_checkpoint conf/cifar100_policy.pth --model pyramid --batch_size 64 --n_epochs 1800 --init_lr 0.05 --weight_decay 0.00005 --no_aug --cutout 0
+$ python AWSAutoAugment/train.py --path ... --dataroot ... --policy_checkpoint ... --model pyramid --batch_size 64 --n_epochs 1800 --init_lr 0.05 --weight_decay 0.00005 --no_aug --cutout 0
 
-$ python AWSAutoAugment/train.py --path ... --dataroot ... --policy_checkpoint conf/cifar100_policy.pth --model pyramid --batch_size 64 --n_epochs 1800 --init_lr 0.05 --weight_decay 0.00005 --no_aug --cutout 16
+$ python AWSAutoAugment/train.py --path ... --dataroot ... --policy_checkpoint ... --model pyramid --batch_size 64 --n_epochs 1800 --init_lr 0.05 --weight_decay 0.00005 --no_aug --cutout 16
 
-$ python AWSAutoAugment/train.py --path ... --dataroot ... --policy_checkpoint conf/cifar100_policy.pth --model pyramid --batch_size 64 --n_epochs 1800 --init_lr 0.05 --weight_decay 0.00005
+$ python AWSAutoAugment/train.py --path ... --dataroot ... --policy_checkpoint ... --model pyramid --batch_size 64 --n_epochs 1800 --init_lr 0.05 --weight_decay 0.00005
 
-$ python AWSAutoAugment/train.py --path ... --dataroot ... --policy_checkpoint conf/cifar100_policy.pth --model pyramid --batch_size 64 --n_epochs 1800 --init_lr 0.05 --weight_decay 0.00005 --enlarge_batch
+$ python AWSAutoAugment/train.py --path ... --dataroot ... --policy_checkpoint ... --model pyramid --batch_size 64 --n_epochs 1800 --init_lr 0.05 --weight_decay 0.00005 --enlarge_batch
 
 
 ## References & Opensources
