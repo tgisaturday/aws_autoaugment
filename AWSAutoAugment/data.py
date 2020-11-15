@@ -69,12 +69,18 @@ def get_dataloaders(args, policy='uniform', split=0.15, split_idx=0, EB=False):
 
     if EB:
         #apply current policy with enlarge batch
-        transform_train.transforms.insert(-2, EB_AWSAugmentation(policy,args.enlarge_batch_size, args.cutout))       
+        if args.no_aug:
+            pass
+        else:        
+            transform_train.transforms.insert(-2, EB_AWSAugmentation(policy,args.enlarge_batch_size, args.cutout))       
         transform_train.transforms.pop(-1)
         transform_train.transforms.pop(-1) 
     else:
         #apply current policy
-        transform_train.transforms.insert(-2, AWSAugmentation(policy))
+        if args.no_aug:
+            pass
+        else:
+            transform_train.transforms.insert(-2, AWSAugmentation(policy))
         if args.cutout > 0:
             transform_train.transforms.append(CutoutDefault(args.cutout)) 
         

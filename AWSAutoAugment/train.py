@@ -38,6 +38,7 @@ parser.add_argument('--policy_controller_type', type=str, default='lstm', choice
 parser.add_argument('--init_lr', type=float, default=0.4)
 parser.add_argument('--n_epochs', type=int, default=300)
 parser.add_argument('--lr_schedule', type=str, default='cosine')
+parser.add_argument('--no_aug', action='store_true')
 parser.add_argument('--cutout', type=int, default=16)
 parser.add_argument('--label_smoothing', type=float, default=0.0)
 parser.add_argument('--enlarge_batch', action='store_true')
