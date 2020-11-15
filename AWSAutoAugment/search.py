@@ -164,6 +164,7 @@ if __name__ == '__main__':
         'type': args.model,
         'dataset': args.dataset,
     }    
+    args.no_aug = False    
     add_filehandler(logger, args.policy_path)  
     
     torch.manual_seed(args.manual_seed)

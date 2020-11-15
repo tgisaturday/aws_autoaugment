@@ -83,7 +83,6 @@ def get_dataloaders(args, policy='uniform', split=0.15, split_idx=0, EB=False):
             transform_train.transforms.insert(-2, AWSAugmentation(policy))
         if args.cutout > 0:
             transform_train.transforms.append(CutoutDefault(args.cutout)) 
-        
 
     if dataset == 'cifar10':
         if EB:
