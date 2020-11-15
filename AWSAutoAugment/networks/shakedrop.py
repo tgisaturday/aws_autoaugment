@@ -29,7 +29,7 @@ class ShakeDropFunction(torch.autograd.Function):
             beta = torch.cuda.FloatTensor(grad_output.size(0)).uniform_(0, 1)
             beta = beta.view(beta.size(0), 1, 1, 1).expand_as(grad_output)
             beta = Variable(beta)
-            return beta * grad_output, None, None, None
+            return (beta * grad_output).clone(), None, None, None
         else:
             return grad_output, None, None, None
 
