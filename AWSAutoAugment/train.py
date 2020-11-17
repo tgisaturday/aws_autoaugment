@@ -32,7 +32,7 @@ parser.add_argument('--resume', action='store_true')
 parser.add_argument('--checkpoint',type=str)
 parser.add_argument('--manual_seed', default=0, type=int)
 
-parser.add_argument('--policy_checkpoint', type=str)
+parser.add_argument('--policy_checkpoint', type=str, default='conf/cifar100_policy.pth')
 parser.add_argument('--policy_controller_type', type=str, default='lstm', choices=['lstm','fcn'])
 """ run config """
 parser.add_argument('--init_lr', type=float, default=0.4)

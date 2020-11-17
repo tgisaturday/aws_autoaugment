@@ -48,17 +48,10 @@ Search : **150 ~ 240 GPU Hours**, WResNet-28-10 on CIFAR100
 
 | Model(CIFAR-100)      | Baseline   | Cutout     | AWSAugment  |   AWS + EB |
 |-----------------------|------------|------------|-------------|------------|
-| Wide-ResNet-28-10     |   20.04    |   19.81    |      -      |     -      | 
-| Shake-Shake(26 2x32d) |   20.81    |     -      |      -      |     -      | 
+| Wide-ResNet-28-10     |   20.04    |   19.81    |    20.18    |   20.16    | 
+| Shake-Shake(26 2x32d) |   20.81    |   19.05    |    20.39    |   20.31    | 
 | PyramidNet+ShakeDrop  |     -      |     -      |      -      |     -      | 
 
-- Searched without Cutout
-
-| Model(CIFAR-100)      | Baseline   | Cutout     | AWSAugment  |   AWS + EB |
-|-----------------------|------------|------------|-------------|------------|
-| Wide-ResNet-28-10     |   20.04    |   19.81    |      -      |     -      | 
-| Shake-Shake(26 2x32d) |   20.81    |     -      |      -      |     -      | 
-| PyramidNet+ShakeDrop  |     -      |     -      |      -      |     -      | 
 
 ## Run
 
